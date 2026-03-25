@@ -22,12 +22,15 @@
 const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
 const STORAGE_KEY = "nv-recruit-data";
-const PASSWORD_KEY = "nv-recruit-password";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyBnmVegbUAJDRmmk8H4CXNi5L1vmZL8DjijFfRVlJ1Mmmkmh9xp9vWRU2YWOzij3SG/exec";
 
 const STATUS_LIST = [
-  "書類選考中", "書類お見送り", "一次：調整中", "一次：日程確定", "一次：合格", "一次：不合格",
+  "書類選考中", "書類お見送り",
+  "一次：調整中", "一次：日程確定", "一次：合格", "一次：不合格",
   "最終：調整中", "最終：日程確定", "最終：合格", "最終：不合格",
-  "適性検査中", "内定：オファー面談", "内定：承諾", "内定：辞退", "辞退", "入社済み",
+  "適性検査中",
+  "内定：オファー面談", "内定：承諾", "内定：辞退",
+  "辞退", "入社済み",
 ];
 
 const KANBAN_COLUMNS = [
@@ -49,24 +52,58 @@ const SOURCES = [
   "HP応募（自社）", "インフラトップ", "その他",
 ];
 const INTERVIEWERS = ["今村さん", "田開さん", "髙山さん", "三宮さん", "市嶋さん", "その他"];
-const BALL_HOLDERS = ["ナウビレ社", "候補者", "エージェント"];
+const REJECT_REASONS = ["スキル不足", "経験不足", "カルチャー不一致", "コミュニケーション", "希望条件不一致", "年齢", "学歴", "その他"];
+const WITHDRAW_REASONS = ["他社決定", "現職残留", "条件不一致", "ギャップ", "選考スピード", "志望度低下", "家庭事情", "不明", "その他"];
 
 const emptyCandidate = () => ({
   id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-  name: "", status: "書類選考中", ball: "ナウビレ社", position: "デジタルマーケティング",
-  source: "", appliedDate: new Date().toISOString().slice(0, 10), documents: "",
-  situation: "Open",
-  interviewer1: "", interview1Date: "", interview1Time: "", interview1Result: "", interview1Note: "",
-  interview1Confirmed: false, interview1Notified: false,
-  interviewerFinal: "", interviewFinalDate: "", interviewFinalTime: "", interviewFinalResult: "",
-  interviewFinalNote: "", interviewFinalConfirmed: false, interviewFinalNotified: false,
-  aptitudeSent: false, offerDate: "", accepted: "", docsCreated: false, docsSent: false,
-  startDate: "", postAcceptContact: false, memo: "",
+  name: "", status: "書類選考中", position: "デジタルマーケティング",
+  source: "", appliedDate: new Date().toISOString().slice(0, 10),
+  // 候補者詳細
+  age: "", currentCompany: "", currentPosition: "", currentSalary: "", desiredSalary: "",
+  documentUrl: "", memo: "",
+  // 書類選考
+  docScreeningReason: "", docScreeningNote: "",
+  // 一次面接
+  interviewer1: "", interview1Date: "", interview1Time: "",
+  interview1Result: "", interview1PassReason: "", interview1RejectReason: "", interview1Note: "",
+  // 最終面接
+  interviewerFinal: "", interviewFinalDate: "", interviewFinalTime: "",
+  interviewFinalResult: "", interviewFinalPassReason: "", interviewFinalRejectReason: "", interviewFinalNote: "",
+  // 内定
+  aptitudeSent: false, offerDate: "", offerSalary: "",
+  accepted: "", withdrawReason: "",
+  startDate: "",
 });
 
+// ─── Utility: Date formatting ───
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+function fmtDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d)) return dateStr;
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${WEEKDAYS[d.getDay()]}）`;
+}
+function fmtDateTime(dateStr, timeStr) {
+  if (!dateStr) return "";
+  const base = fmtDate(dateStr);
+  return timeStr ? `${base} ${timeStr}` : base;
+}
+function daysBetween(d1, d2) {
+  if (!d1 || !d2) return null;
+  const a = new Date(d1), b = new Date(d2);
+  if (isNaN(a) || isNaN(b)) return null;
+  return Math.round((b - a) / 86400000);
+}
+function daysFromApply(c) {
+  if (!c.appliedDate) return null;
+  return daysBetween(c.appliedDate, new Date().toISOString().slice(0, 10));
+}
+
+// ─── Colors & Styles ───
 const C = {
   bg: "#08090c", surface: "#111318", surfaceAlt: "#161921", card: "#1a1d27",
-  cardHover: "#1f2330", border: "#252836", borderFocus: "#6366f1",
+  cardHover: "#1f2330", border: "#252836",
   text: "#e4e5ec", textSub: "#9496a8", textDim: "#565870",
   accent: "#6366f1", accentL: "#818cf8", accentD: "#4f46e5",
   ok: "#22c55e", okBg: "#22c55e14", warn: "#f59e0b", warnBg: "#f59e0b14",
@@ -75,11 +112,12 @@ const C = {
 
 const statusColor = (s) => {
   const m = {
-    "書類選考中": ["#3b82f6", "#3b82f614"], "書類お見送り": ["#ef4444", "#ef444414"], "一次：調整中": ["#f59e0b", "#f59e0b14"],
-    "一次：日程確定": ["#6366f1", "#6366f114"], "一次：合格": ["#22c55e", "#22c55e14"],
-    "一次：不合格": ["#ef4444", "#ef444414"], "最終：調整中": ["#f59e0b", "#f59e0b14"],
-    "最終：日程確定": ["#8b5cf6", "#8b5cf614"], "最終：合格": ["#22c55e", "#22c55e14"],
-    "最終：不合格": ["#ef4444", "#ef444414"], "適性検査中": ["#06b6d4", "#06b6d414"],
+    "書類選考中": ["#3b82f6", "#3b82f614"], "書類お見送り": ["#ef4444", "#ef444414"],
+    "一次：調整中": ["#f59e0b", "#f59e0b14"], "一次：日程確定": ["#6366f1", "#6366f114"],
+    "一次：合格": ["#22c55e", "#22c55e14"], "一次：不合格": ["#ef4444", "#ef444414"],
+    "最終：調整中": ["#f59e0b", "#f59e0b14"], "最終：日程確定": ["#8b5cf6", "#8b5cf614"],
+    "最終：合格": ["#22c55e", "#22c55e14"], "最終：不合格": ["#ef4444", "#ef444414"],
+    "適性検査中": ["#06b6d4", "#06b6d414"],
     "内定：オファー面談": ["#8b5cf6", "#8b5cf614"], "内定：承諾": ["#22c55e", "#22c55e14"],
     "内定：辞退": ["#ef4444", "#ef444414"], "辞退": ["#ef4444", "#ef444414"],
     "入社済み": ["#10b981", "#10b98114"],
@@ -90,17 +128,22 @@ const statusColor = (s) => {
 const inp = { background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 12px", color: C.text, fontSize: 13, outline: "none", width: "100%", boxSizing: "border-box" };
 const btnS = { padding: "8px 16px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, display: "inline-flex", alignItems: "center", gap: 6, transition: "all .15s" };
 
+// ─── Shared Components ───
 function Badge({ status }) {
   const [c, bg] = statusColor(status);
   return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, background: bg, color: c, padding: "2px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>
     <span style={{ width: 5, height: 5, borderRadius: "50%", background: c }} />{status}
   </span>;
 }
-
-function Modal({ open, onClose, title, children, width = 600 }) {
+function DaysChip({ days }) {
+  if (days === null || days === undefined) return null;
+  const color = days <= 14 ? C.ok : days <= 30 ? C.warn : C.bad;
+  return <span style={{ fontSize: 10, fontWeight: 600, padding: "1px 6px", borderRadius: 8, background: color + "18", color }}>{days}日</span>;
+}
+function Modal({ open, onClose, title, children, width = 640 }) {
   if (!open) return null;
   return <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,.65)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
-    <div style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, width: "100%", maxWidth: width, maxHeight: "88vh", overflow: "auto", boxShadow: "0 32px 64px rgba(0,0,0,.5)" }} onClick={e => e.stopPropagation()}>
+    <div style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, width: "100%", maxWidth: width, maxHeight: "90vh", overflow: "auto", boxShadow: "0 32px 64px rgba(0,0,0,.5)" }} onClick={e => e.stopPropagation()}>
       <div style={{ padding: "18px 24px", borderBottom: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", position: "sticky", top: 0, background: C.surface, zIndex: 2, borderRadius: "16px 16px 0 0" }}>
         <h3 style={{ margin: 0, fontSize: 15, color: C.text, fontWeight: 700 }}>{title}</h3>
         <button onClick={onClose} style={{ ...btnS, background: "transparent", color: C.textDim, padding: "4px 8px", fontSize: 18 }}>✕</button>
@@ -109,11 +152,17 @@ function Modal({ open, onClose, title, children, width = 600 }) {
     </div>
   </div>;
 }
-
 function Fl({ label, children }) { return <div style={{ marginBottom: 12 }}><label style={{ display: "block", fontSize: 10, color: C.textSub, marginBottom: 3, fontWeight: 700, textTransform: "uppercase", letterSpacing: .5 }}>{label}</label>{children}</div>; }
-function IFl({ label, value, onChange, type = "text" }) { return <Fl label={label}><input type={type} value={value || ""} onChange={e => onChange(e.target.value)} style={inp} /></Fl>; }
+function IFl({ label, value, onChange, type = "text", placeholder = "" }) { return <Fl label={label}><input type={type} value={value || ""} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={inp} /></Fl>; }
 function SFl({ label, value, onChange, options, allowEmpty = true }) { return <Fl label={label}><select value={value || ""} onChange={e => onChange(e.target.value)} style={{ ...inp, appearance: "auto" }}>{allowEmpty && <option value="">--</option>}{options.map(o => <option key={o}>{o}</option>)}</select></Fl>; }
 function CFl({ label, checked, onChange }) { return <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", fontSize: 12, color: C.text, marginBottom: 6 }}><input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} style={{ accentColor: C.accent, width: 15, height: 15 }} />{label}</label>; }
+function TFl({ label, value, onChange, rows = 2 }) { return <Fl label={label}><textarea value={value || ""} onChange={e => onChange(e.target.value)} rows={rows} style={{ ...inp, resize: "vertical" }} /></Fl>; }
+function Section({ title, color = C.accentL, children }) {
+  return <div style={{ borderTop: `1px solid ${C.border}`, margin: "16px 0", paddingTop: 16 }}>
+    <h4 style={{ color, fontSize: 12, margin: "0 0 10px", fontWeight: 700 }}>{title}</h4>
+    {children}
+  </div>;
+}
 
 function KPICard({ label, value, sub, color = C.accent, icon }) {
   return <div style={{ background: C.card, borderRadius: 14, padding: "20px 18px", border: `1px solid ${C.border}`, position: "relative", overflow: "hidden" }}>
@@ -123,7 +172,6 @@ function KPICard({ label, value, sub, color = C.accent, icon }) {
     {sub && <div style={{ fontSize: 10, color: C.textDim, marginTop: 3 }}>{sub}</div>}
   </div>;
 }
-
 function FunnelBar({ label, value, maxVal, rate, color, sub }) {
   const pct = maxVal > 0 ? (value / maxVal) * 100 : 0;
   return <div style={{ marginBottom: 14 }}>
@@ -141,381 +189,81 @@ function FunnelBar({ label, value, maxVal, rate, color, sub }) {
   </div>;
 }
 
-// ─── CSV Parser ───
-function parseCSV(text) {
-  const lines = []; let cur = []; let field = ""; let inQ = false;
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (inQ) {
-      if (ch === '"' && text[i + 1] === '"') { field += '"'; i++; }
-      else if (ch === '"') inQ = false;
-      else field += ch;
-    } else {
-      if (ch === '"') inQ = true;
-      else if (ch === ',') { cur.push(field.trim()); field = ""; }
-      else if (ch === '\n' || (ch === '\r' && text[i + 1] === '\n')) {
-        cur.push(field.trim()); if (cur.some(c => c)) lines.push(cur); cur = []; field = "";
-        if (ch === '\r') i++;
-      } else field += ch;
-    }
-  }
-  cur.push(field.trim()); if (cur.some(c => c)) lines.push(cur);
-  return lines;
-}
-
-function mapStatus(raw) {
-  if (!raw) return "書類選考中";
-  const s = raw.trim();
-  const exact = STATUS_LIST.find(st => st === s);
-  if (exact) return exact;
-  if (s.includes("不合格") && s.includes("一次")) return "一次：不合格";
-  if (s.includes("不合格") && s.includes("最終")) return "最終：不合格";
-  if (s.includes("合格") && s.includes("一次")) return "一次：合格";
-  if (s.includes("合格") && s.includes("最終")) return "最終：合格";
-  if (s.includes("日程確定") && s.includes("一次")) return "一次：日程確定";
-  if (s.includes("日程確定") && s.includes("最終")) return "最終：日程確定";
-  if (s.includes("調整") && s.includes("一次")) return "一次：調整中";
-  if (s.includes("調整") && s.includes("最終")) return "最終：調整中";
-  if (s.includes("辞退") && s.includes("内定")) return "内定：辞退";
-  if (s.includes("辞退")) return "辞退";
-  if (s.includes("承諾")) return "内定：承諾";
-  if (s.includes("内定") && s.includes("オファー")) return "内定：オファー面談";
-  if (s.includes("内定")) return "内定：オファー面談";
-  if (s.includes("適性")) return "適性検査中";
-  if (s.includes("入社")) return "入社済み";
-  if (s.includes("お見送り") && s.includes("書類")) return "書類お見送り";
-  if (s.includes("不合格") && s.includes("書類")) return "書類お見送り";
-  if (s.includes("書類")) return "書類選考中";
-  return "書類選考中";
-}
-
-function parseDate(raw) {
-  if (!raw) return "";
-  const s = raw.trim();
-  // YYYY-MM-DD or YYYY/MM/DD
-  const iso = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
-  if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
-  // M/D（曜日）format like "2/24（火）"
-  const jp = s.match(/(\d{1,2})\/(\d{1,2})/);
-  if (jp) {
-    const y = new Date().getFullYear();
-    return `${y}-${jp[1].padStart(2, "0")}-${jp[2].padStart(2, "0")}`;
-  }
-  return "";
-}
-
-function parseTime(raw) {
-  if (!raw) return "";
-  const s = raw.trim();
-  const m = s.match(/(\d{1,2}):(\d{2})/);
-  if (m) return `${m[1].padStart(2, "0")}:${m[2]}`;
-  return "";
-}
-
-function findCol(headers, ...keywords) {
-  return headers.findIndex(h => {
-    const hl = (h || "").replace(/\s+/g, "").toLowerCase();
-    return keywords.some(k => hl.includes(k));
-  });
-}
-
-function csvToCandidate(row, hIdx) {
-  const g = (i) => i >= 0 && i < row.length ? (row[i] || "").trim() : "";
-  const boolVal = (v) => { const s = (v || "").trim().toUpperCase(); return s === "TRUE" || s === "1" || s === "○" || s === "済"; };
-
-  return {
-    ...emptyCandidate(),
-    name: g(hIdx.name),
-    status: mapStatus(g(hIdx.status)),
-    ball: g(hIdx.ball) || "ナウビレ社",
-    position: g(hIdx.position) || "デジタルマーケティング",
-    source: g(hIdx.source),
-    appliedDate: parseDate(g(hIdx.appliedDate)) || new Date().toISOString().slice(0, 10),
-    documents: g(hIdx.documents),
-    situation: (g(hIdx.situation) || "Open").includes("Close") ? "Close" : "Open",
-    interviewer1: g(hIdx.interviewer1),
-    interview1Date: parseDate(g(hIdx.int1Date)),
-    interview1Time: parseTime(g(hIdx.int1Time)),
-    interview1Result: g(hIdx.int1Result),
-    interview1Note: g(hIdx.int1Note),
-    interview1Confirmed: boolVal(g(hIdx.int1Confirmed)),
-    interview1Notified: boolVal(g(hIdx.int1Notified)),
-    interviewerFinal: g(hIdx.interviewerF),
-    interviewFinalDate: parseDate(g(hIdx.intFDate)),
-    interviewFinalTime: parseTime(g(hIdx.intFTime)),
-    interviewFinalResult: g(hIdx.intFResult),
-    interviewFinalNote: g(hIdx.intFNote),
-    interviewFinalConfirmed: boolVal(g(hIdx.intFConfirmed)),
-    interviewFinalNotified: boolVal(g(hIdx.intFNotified)),
-    aptitudeSent: boolVal(g(hIdx.aptitude)),
-    offerDate: parseDate(g(hIdx.offerDate)),
-    accepted: g(hIdx.accepted),
-    startDate: parseDate(g(hIdx.startDate)),
-    memo: g(hIdx.memo),
-  };
-}
-
-function detectColumns(headers) {
-  return {
-    name: findCol(headers, "氏名", "名前", "name"),
-    status: findCol(headers, "ステータス", "status"),
-    ball: findCol(headers, "ボール", "ball"),
-    position: findCol(headers, "職種", "ポジション", "position"),
-    source: findCol(headers, "経由", "チャネル", "source", "媒体"),
-    appliedDate: findCol(headers, "応募日", "応募", "applied"),
-    documents: findCol(headers, "書類", "document"),
-    situation: findCol(headers, "状況", "situation"),
-    interviewer1: findCol(headers, "面接官"),
-    int1Date: (() => {
-      const all = headers.map((h, i) => ({ h: (h || "").replace(/\s+/g, ""), i }));
-      const candidates = all.filter(x => x.h.includes("日程") && !x.h.includes("最終") && !x.h.includes("オファー"));
-      return candidates.length > 0 ? candidates[0].i : -1;
-    })(),
-    int1Time: (() => {
-      const all = headers.map((h, i) => ({ h: (h || "").replace(/\s+/g, ""), i }));
-      const candidates = all.filter(x => x.h.includes("時間") && !x.h.includes("最終"));
-      return candidates.length > 0 ? candidates[0].i : -1;
-    })(),
-    int1Result: (() => {
-      const all = headers.map((h, i) => ({ h: (h || "").replace(/\s+/g, ""), i }));
-      const candidates = all.filter(x => x.h.includes("合否") && !x.h.includes("最終"));
-      return candidates.length > 0 ? candidates[0].i : -1;
-    })(),
-    int1Note: (() => {
-      const all = headers.map((h, i) => ({ h: (h || "").replace(/\s+/g, ""), i }));
-      const candidates = all.filter(x => x.h.includes("所感") && !x.h.includes("最終"));
-      return candidates.length > 0 ? candidates[0].i : -1;
-    })(),
-    int1Confirmed: (() => {
-      const all = headers.map((h, i) => ({ h: (h || "").replace(/\s+/g, ""), i }));
-      const candidates = all.filter(x => x.h.includes("日程確定") && x.h.includes("連絡") && !x.h.includes("最終"));
-      return candidates.length > 0 ? candidates[0].i : -1;
-    })(),
-    int1Notified: (() => {
-      const all = headers.map((h, i) => ({ h: (h || "").replace(/\s+/g, ""), i }));
-      const candidates = all.filter(x => x.h.includes("結果") && x.h.includes("通知") && !x.h.includes("最終"));
-      return candidates.length > 0 ? candidates[0].i : -1;
-    })(),
-    interviewerF: -1,
-    intFDate: (() => {
-      const all = headers.map((h, i) => ({ h: (h || "").replace(/\s+/g, ""), i }));
-      const dateIdxs = all.filter(x => x.h.includes("日程") && !x.h.includes("オファー"));
-      return dateIdxs.length > 1 ? dateIdxs[1].i : -1;
-    })(),
-    intFTime: (() => {
-      const all = headers.map((h, i) => ({ h: (h || "").replace(/\s+/g, ""), i }));
-      const candidates = all.filter(x => x.h.includes("時間"));
-      return candidates.length > 1 ? candidates[1].i : -1;
-    })(),
-    intFResult: (() => {
-      const all = headers.map((h, i) => ({ h: (h || "").replace(/\s+/g, ""), i }));
-      const candidates = all.filter(x => x.h.includes("合否"));
-      return candidates.length > 1 ? candidates[1].i : -1;
-    })(),
-    intFNote: (() => {
-      const all = headers.map((h, i) => ({ h: (h || "").replace(/\s+/g, ""), i }));
-      const candidates = all.filter(x => x.h.includes("所感"));
-      return candidates.length > 1 ? candidates[1].i : -1;
-    })(),
-    intFConfirmed: -1,
-    intFNotified: -1,
-    aptitude: findCol(headers, "適性検査", "aptitude"),
-    offerDate: findCol(headers, "オファー", "offer"),
-    accepted: findCol(headers, "承諾"),
-    startDate: findCol(headers, "入社予定", "入社"),
-    memo: findCol(headers, "備考", "memo", "メモ"),
-  };
-}
-
-function exportCSV(candidates) {
-  const headers = ["氏名","ステータス","ボール","職種","経由","応募日","書類","状況","面接官(一次)","一次日程","一次時間","一次合否","一次所感","一次確定連絡","一次結果通知","面接官(最終)","最終日程","最終時間","最終合否","最終所感","最終確定連絡","最終結果通知","適性検査送付","オファー面談日","承諾","入社予定日","備考"];
-  const esc = (v) => { const s = String(v ?? ""); return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s; };
-  const rows = candidates.map(c => [c.name, c.status, c.ball, c.position, c.source, c.appliedDate, c.documents, c.situation, c.interviewer1, c.interview1Date, c.interview1Time, c.interview1Result, c.interview1Note, c.interview1Confirmed, c.interview1Notified, c.interviewerFinal, c.interviewFinalDate, c.interviewFinalTime, c.interviewFinalResult, c.interviewFinalNote, c.interviewFinalConfirmed, c.interviewFinalNotified, c.aptitudeSent, c.offerDate, c.accepted, c.startDate, c.memo].map(esc).join(","));
-  return "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
-}
-
-// ─── CSV Import Modal ───
-function ImportModal({ open, onClose, onImport }) {
-  const [step, setStep] = useState(1); // 1=upload, 2=preview, 3=done
-  const [parsed, setParsed] = useState([]);
-  const [headers, setHeaders] = useState([]);
-  const [hIdx, setHIdx] = useState(null);
-  const [preview, setPreview] = useState([]);
-  const [importMode, setImportMode] = useState("append"); // append | replace
-  const [headerRow, setHeaderRow] = useState(0);
-  const fileRef = useRef(null);
-
-  const reset = () => { setStep(1); setParsed([]); setHeaders([]); setHIdx(null); setPreview([]); setHeaderRow(0); };
-
-  const handleFile = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target.result;
-      const lines = parseCSV(text);
-      if (lines.length < 2) { alert("データが少なすぎます"); return; }
-      setParsed(lines);
-      // Try to auto-detect header row (look for row containing "氏名" or "ステータス")
-      let hRow = 0;
-      for (let i = 0; i < Math.min(lines.length, 10); i++) {
-        const row = lines[i].map(c => (c || "").replace(/\s+/g, ""));
-        if (row.some(c => c.includes("氏名") || c.includes("ステータス") || c.includes("name"))) { hRow = i; break; }
-      }
-      setHeaderRow(hRow);
-      const h = lines[hRow];
-      setHeaders(h);
-      const idx = detectColumns(h);
-      setHIdx(idx);
-      // Preview
-      const dataRows = lines.slice(hRow + 1).filter(r => r.some(c => c));
-      const mapped = dataRows.map(r => csvToCandidate(r, idx)).filter(c => c.name);
-      setPreview(mapped);
-      setStep(2);
-    };
-    reader.readAsText(file, "UTF-8");
-  };
-
-  const doImport = () => {
-    onImport(preview, importMode);
-    setStep(3);
-  };
-
-  if (!open) return null;
-
-  return <Modal open={open} onClose={() => { reset(); onClose(); }} title="CSVインポート" width={720}>
-    {step === 1 && <div>
-      <p style={{ color: C.textSub, fontSize: 13, marginBottom: 16 }}>
-        スプレッドシートからCSVでエクスポートしたファイルを選択してください。ヘッダー行（氏名、ステータス、経由など）を自動検出して取り込みます。
-      </p>
-      <div style={{ border: `2px dashed ${C.border}`, borderRadius: 12, padding: "40px 20px", textAlign: "center", cursor: "pointer", transition: "border-color .2s" }}
-        onClick={() => fileRef.current?.click()}
-        onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = C.accent; }}
-        onDragLeave={e => { e.currentTarget.style.borderColor = C.border; }}
-        onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = C.border; const f = e.dataTransfer.files?.[0]; if (f) { const dt = new DataTransfer(); dt.items.add(f); fileRef.current.files = dt.files; handleFile({ target: { files: [f] } }); } }}>
-        <div style={{ fontSize: 32, marginBottom: 8 }}>📄</div>
-        <div style={{ color: C.text, fontWeight: 600, fontSize: 14, marginBottom: 4 }}>CSVファイルを選択 or ドロップ</div>
-        <div style={{ color: C.textDim, fontSize: 11 }}>UTF-8, Shift_JIS対応</div>
-        <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: "none" }} onChange={handleFile} />
-      </div>
-      <div style={{ marginTop: 16, padding: "12px 14px", background: C.surfaceAlt, borderRadius: 10, fontSize: 11, color: C.textSub }}>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>対応フォーマット</div>
-        <div>ヘッダー行に「氏名」「ステータス」「経由」「職種」「応募日」などが含まれるCSV。スプレッドシートの採用管理シートをCSV保存したものがそのまま使えます。</div>
-      </div>
-    </div>}
-
-    {step === 2 && <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{preview.length}名のデータを検出</div>
-          <div style={{ fontSize: 11, color: C.textSub }}>ヘッダー行: {headerRow + 1}行目（{headers.filter(h => h).slice(0, 5).join(", ")}…）</div>
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <label style={{ fontSize: 11, color: C.textSub }}>取り込み方法:</label>
-          <select value={importMode} onChange={e => setImportMode(e.target.value)} style={{ ...inp, width: 130, appearance: "auto", fontSize: 12 }}>
-            <option value="append">追加（既存に追加）</option>
-            <option value="replace">置換（全て入れ替え）</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Column mapping preview */}
-      <div style={{ padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, marginBottom: 14, fontSize: 11 }}>
-        <div style={{ fontWeight: 700, color: C.text, marginBottom: 6 }}>カラムマッピング</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 4 }}>
-          {[
-            { l: "氏名", v: hIdx?.name }, { l: "ステータス", v: hIdx?.status }, { l: "職種", v: hIdx?.position },
-            { l: "経由", v: hIdx?.source }, { l: "応募日", v: hIdx?.appliedDate }, { l: "状況", v: hIdx?.situation },
-            { l: "一次日程", v: hIdx?.int1Date }, { l: "一次合否", v: hIdx?.int1Result }, { l: "最終日程", v: hIdx?.intFDate },
-            { l: "備考", v: hIdx?.memo },
-          ].map(m => <div key={m.l} style={{ display: "flex", gap: 4 }}>
-            <span style={{ color: C.textDim }}>{m.l}:</span>
-            <span style={{ color: m.v >= 0 ? C.ok : C.bad, fontWeight: 600 }}>{m.v >= 0 ? `列${m.v + 1}` : "未検出"}</span>
-          </div>)}
-        </div>
-      </div>
-
-      {/* Data preview table */}
-      <div style={{ overflowX: "auto", maxHeight: 300, marginBottom: 16, border: `1px solid ${C.border}`, borderRadius: 10 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-          <thead><tr style={{ background: C.surfaceAlt, position: "sticky", top: 0 }}>
-            {["氏名", "ステータス", "職種", "経由", "応募日", "状況"].map(h => <th key={h} style={{ padding: "6px 10px", textAlign: "left", color: C.textDim, fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>)}
-          </tr></thead>
-          <tbody>{preview.slice(0, 50).map((c, i) => <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
-            <td style={{ padding: "5px 10px", color: C.text, fontWeight: 600 }}>{c.name}</td>
-            <td style={{ padding: "5px 10px" }}><Badge status={c.status} /></td>
-            <td style={{ padding: "5px 10px", color: C.textSub }}>{c.position}</td>
-            <td style={{ padding: "5px 10px", color: C.textSub }}>{c.source}</td>
-            <td style={{ padding: "5px 10px", color: C.textSub }}>{c.appliedDate}</td>
-            <td style={{ padding: "5px 10px" }}><span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 8, background: c.situation === "Open" ? C.okBg : C.badBg, color: c.situation === "Open" ? C.ok : C.bad }}>{c.situation}</span></td>
-          </tr>)}</tbody>
-        </table>
-        {preview.length > 50 && <div style={{ padding: 8, textAlign: "center", color: C.textDim, fontSize: 11 }}>…他 {preview.length - 50}名</div>}
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "space-between" }}>
-        <button onClick={() => { reset(); }} style={{ ...btnS, background: C.surfaceAlt, color: C.textSub }}>戻る</button>
-        <button onClick={doImport} style={{ ...btnS, background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`, color: "#fff", padding: "10px 24px" }}>
-          {importMode === "replace" ? `${preview.length}名で置換` : `${preview.length}名を追加`}
-        </button>
-      </div>
-    </div>}
-
-    {step === 3 && <div style={{ textAlign: "center", padding: "30px 0" }}>
-      <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 6 }}>{preview.length}名のデータを取り込みました</div>
-      <div style={{ fontSize: 12, color: C.textSub, marginBottom: 20 }}>一覧タブで確認できます</div>
-      <button onClick={() => { reset(); onClose(); }} style={{ ...btnS, background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`, color: "#fff", padding: "10px 24px" }}>閉じる</button>
-    </div>}
-  </Modal>;
-}
-
+// ─── Candidate Form (v2) ───
 function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
   const u = (f, v) => onChange({ ...c, [f]: v });
+  const elapsed = daysFromApply(c);
   return <div>
+    {/* Header info */}
+    {!isNew && elapsed !== null && <div style={{ display: "flex", gap: 10, marginBottom: 14, fontSize: 11, color: C.textSub }}>
+      <span>応募から <DaysChip days={elapsed} /> 経過</span>
+      {c.interview1Date && <span>応募→一次: {daysBetween(c.appliedDate, c.interview1Date)}日</span>}
+      {c.interviewFinalDate && <span>応募→最終: {daysBetween(c.appliedDate, c.interviewFinalDate)}日</span>}
+    </div>}
+
+    {/* Basic */}
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
       <IFl label="氏名" value={c.name} onChange={v => u("name", v)} />
       <SFl label="ステータス" value={c.status} onChange={v => u("status", v)} options={STATUS_LIST} allowEmpty={false} />
-      <SFl label="ボール" value={c.ball} onChange={v => u("ball", v)} options={BALL_HOLDERS} allowEmpty={false} />
       <SFl label="職種" value={c.position} onChange={v => u("position", v)} options={POSITIONS} allowEmpty={false} />
       <SFl label="経由" value={c.source} onChange={v => u("source", v)} options={SOURCES} />
       <IFl label="応募日" value={c.appliedDate} onChange={v => u("appliedDate", v)} type="date" />
-      <SFl label="状況" value={c.situation} onChange={v => u("situation", v)} options={["Open", "Close"]} allowEmpty={false} />
-      <IFl label="書類" value={c.documents} onChange={v => u("documents", v)} />
+      <IFl label="年齢" value={c.age} onChange={v => u("age", v)} placeholder="28" />
+      <IFl label="現職（社名）" value={c.currentCompany} onChange={v => u("currentCompany", v)} />
+      <IFl label="現職（役職・職種）" value={c.currentPosition} onChange={v => u("currentPosition", v)} />
+      <IFl label="現年収（万円）" value={c.currentSalary} onChange={v => u("currentSalary", v)} placeholder="500" />
+      <IFl label="希望年収（万円）" value={c.desiredSalary} onChange={v => u("desiredSalary", v)} placeholder="600" />
     </div>
-    <div style={{ borderTop: `1px solid ${C.border}`, margin: "14px 0", paddingTop: 14 }}>
-      <h4 style={{ color: C.accentL, fontSize: 12, margin: "0 0 10px", fontWeight: 700 }}>一次面接</h4>
+    <IFl label="書類URL（Google Drive等）" value={c.documentUrl} onChange={v => u("documentUrl", v)} placeholder="https://drive.google.com/..." />
+
+    {/* 書類選考 */}
+    <Section title="書類選考">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+        <SFl label="お見送り理由" value={c.docScreeningReason} onChange={v => u("docScreeningReason", v)} options={REJECT_REASONS} />
+        <IFl label="書類選考メモ" value={c.docScreeningNote} onChange={v => u("docScreeningNote", v)} />
+      </div>
+    </Section>
+
+    {/* 一次面接 */}
+    <Section title="一次面接">
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
         <SFl label="面接官" value={c.interviewer1} onChange={v => u("interviewer1", v)} options={INTERVIEWERS} />
         <IFl label="日程" value={c.interview1Date} onChange={v => u("interview1Date", v)} type="date" />
         <IFl label="時間" value={c.interview1Time} onChange={v => u("interview1Time", v)} type="time" />
         <SFl label="合否" value={c.interview1Result} onChange={v => u("interview1Result", v)} options={["合格", "不合格", "保留"]} />
+        <IFl label="通過理由" value={c.interview1PassReason} onChange={v => u("interview1PassReason", v)} placeholder="論理的思考力が高い、等" />
+        <SFl label="お見送り理由" value={c.interview1RejectReason} onChange={v => u("interview1RejectReason", v)} options={REJECT_REASONS} />
       </div>
-      <IFl label="所感" value={c.interview1Note} onChange={v => u("interview1Note", v)} />
-      <div style={{ display: "flex", gap: 16 }}><CFl label="日程確定連絡済" checked={c.interview1Confirmed} onChange={v => u("interview1Confirmed", v)} /><CFl label="結果通知済" checked={c.interview1Notified} onChange={v => u("interview1Notified", v)} /></div>
-    </div>
-    <div style={{ borderTop: `1px solid ${C.border}`, margin: "14px 0", paddingTop: 14 }}>
-      <h4 style={{ color: C.accentL, fontSize: 12, margin: "0 0 10px", fontWeight: 700 }}>最終面接</h4>
+      <TFl label="所感・詳細メモ" value={c.interview1Note} onChange={v => u("interview1Note", v)} />
+    </Section>
+
+    {/* 最終面接 */}
+    <Section title="最終面接">
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
         <SFl label="面接官" value={c.interviewerFinal} onChange={v => u("interviewerFinal", v)} options={INTERVIEWERS} />
         <IFl label="日程" value={c.interviewFinalDate} onChange={v => u("interviewFinalDate", v)} type="date" />
         <IFl label="時間" value={c.interviewFinalTime} onChange={v => u("interviewFinalTime", v)} type="time" />
         <SFl label="合否" value={c.interviewFinalResult} onChange={v => u("interviewFinalResult", v)} options={["合格", "不合格", "保留"]} />
+        <IFl label="通過理由" value={c.interviewFinalPassReason} onChange={v => u("interviewFinalPassReason", v)} />
+        <SFl label="お見送り理由" value={c.interviewFinalRejectReason} onChange={v => u("interviewFinalRejectReason", v)} options={REJECT_REASONS} />
       </div>
-      <IFl label="所感" value={c.interviewFinalNote} onChange={v => u("interviewFinalNote", v)} />
-      <div style={{ display: "flex", gap: 16 }}><CFl label="日程確定連絡済" checked={c.interviewFinalConfirmed} onChange={v => u("interviewFinalConfirmed", v)} /><CFl label="結果通知済" checked={c.interviewFinalNotified} onChange={v => u("interviewFinalNotified", v)} /></div>
-    </div>
-    <div style={{ borderTop: `1px solid ${C.border}`, margin: "14px 0", paddingTop: 14 }}>
-      <h4 style={{ color: C.accentL, fontSize: 12, margin: "0 0 10px", fontWeight: 700 }}>内定・入社</h4>
+      <TFl label="所感・詳細メモ" value={c.interviewFinalNote} onChange={v => u("interviewFinalNote", v)} />
+    </Section>
+
+    {/* 内定・入社 */}
+    <Section title="内定・入社" color="#22c55e">
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
         <CFl label="適性検査送付済" checked={c.aptitudeSent} onChange={v => u("aptitudeSent", v)} />
-        <IFl label="オファー面談日程" value={c.offerDate} onChange={v => u("offerDate", v)} type="date" />
-        <SFl label="承諾" value={c.accepted} onChange={v => u("accepted", v)} options={["承諾", "辞退", "検討中"]} />
+        <IFl label="オファー面談日" value={c.offerDate} onChange={v => u("offerDate", v)} type="date" />
+        <IFl label="提示年収（万円）" value={c.offerSalary} onChange={v => u("offerSalary", v)} placeholder="550" />
+        <SFl label="承諾状況" value={c.accepted} onChange={v => u("accepted", v)} options={["承諾", "辞退", "検討中"]} />
+        <SFl label="辞退理由" value={c.withdrawReason} onChange={v => u("withdrawReason", v)} options={WITHDRAW_REASONS} />
         <IFl label="入社予定日" value={c.startDate} onChange={v => u("startDate", v)} type="date" />
       </div>
-      <div style={{ display: "flex", gap: 16 }}><CFl label="書類作成済" checked={c.docsCreated} onChange={v => u("docsCreated", v)} /><CFl label="書類送付済" checked={c.docsSent} onChange={v => u("docsSent", v)} /><CFl label="承諾後連絡済" checked={c.postAcceptContact} onChange={v => u("postAcceptContact", v)} /></div>
-    </div>
-    <Fl label="備考"><textarea value={c.memo || ""} onChange={e => u("memo", e.target.value)} rows={3} style={{ ...inp, resize: "vertical" }} /></Fl>
+    </Section>
+
+    <TFl label="備考" value={c.memo} onChange={v => u("memo", v)} rows={3} />
+
     <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
       <div>{!isNew && <button onClick={onDelete} style={{ ...btnS, background: C.badBg, color: C.bad }}>削除</button>}</div>
       <button onClick={onSave} style={{ ...btnS, background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`, color: "#fff", padding: "10px 24px" }}>{isNew ? "追加" : "保存"}</button>
@@ -523,85 +271,74 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
   </div>;
 }
 
+// ─── List View (v2) ───
 function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatus, onBulkDelete }) {
-  const [q, setQ] = useState(""); const [fSt, setFSt] = useState(""); const [fPos, setFPos] = useState(""); const [fSrc, setFSrc] = useState(""); const [fSit, setFSit] = useState("");
+  const [q, setQ] = useState(""); const [fSt, setFSt] = useState(""); const [fPos, setFPos] = useState(""); const [fSrc, setFSrc] = useState("");
   const [selected, setSelected] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
   const filtered = useMemo(() => candidates.filter(c => {
-    if (q && !c.name.includes(q) && !c.source.includes(q) && !c.memo?.includes(q)) return false;
-    return (!fSt || c.status === fSt) && (!fPos || c.position === fPos) && (!fSrc || c.source === fSrc) && (!fSit || c.situation === fSit);
-  }), [candidates, q, fSt, fPos, fSrc, fSit]);
+    if (q && !c.name.includes(q) && !c.source.includes(q) && !c.memo?.includes(q) && !c.currentCompany?.includes(q)) return false;
+    return (!fSt || c.status === fSt) && (!fPos || c.position === fPos) && (!fSrc || c.source === fSrc);
+  }), [candidates, q, fSt, fPos, fSrc]);
 
-  const allSelected = filtered.length > 0 && filtered.every(c => selected.has(c.id));
-  const toggleAll = () => {
-    if (allSelected) setSelected(new Set());
-    else setSelected(new Set(filtered.map(c => c.id)));
-  };
-  const toggleOne = (id) => {
-    const next = new Set(selected);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    setSelected(next);
-  };
+  const allSel = filtered.length > 0 && filtered.every(c => selected.has(c.id));
+  const toggleAll = () => { if (allSel) setSelected(new Set()); else setSelected(new Set(filtered.map(c => c.id))); };
+  const toggleOne = (id) => { const n = new Set(selected); if (n.has(id)) n.delete(id); else n.add(id); setSelected(n); };
 
   return <div>
     <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
-      <input placeholder="検索…" value={q} onChange={e => setQ(e.target.value)} style={{ ...inp, width: 180 }} />
+      <input placeholder="検索（氏名・経由・現職・備考）" value={q} onChange={e => setQ(e.target.value)} style={{ ...inp, width: 220 }} />
       <select value={fSt} onChange={e => setFSt(e.target.value)} style={{ ...inp, width: 150, appearance: "auto" }}><option value="">全ステータス</option>{STATUS_LIST.map(s => <option key={s}>{s}</option>)}</select>
       <select value={fPos} onChange={e => setFPos(e.target.value)} style={{ ...inp, width: 150, appearance: "auto" }}><option value="">全職種</option>{POSITIONS.map(s => <option key={s}>{s}</option>)}</select>
       <select value={fSrc} onChange={e => setFSrc(e.target.value)} style={{ ...inp, width: 130, appearance: "auto" }}><option value="">全経由</option>{SOURCES.map(s => <option key={s}>{s}</option>)}</select>
-      <select value={fSit} onChange={e => setFSit(e.target.value)} style={{ ...inp, width: 100, appearance: "auto" }}><option value="">Open/Close</option><option>Open</option><option>Close</option></select>
       <div style={{ flex: 1 }} />
       <button onClick={onExport} style={{ ...btnS, background: C.surfaceAlt, color: C.textSub, fontSize: 11 }}>↓ CSV出力</button>
       <button onClick={onImport} style={{ ...btnS, background: C.surfaceAlt, color: C.accentL, border: `1px solid ${C.accent}30`, fontSize: 11 }}>↑ CSV取込</button>
       <button onClick={onAdd} style={{ ...btnS, background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`, color: "#fff" }}>＋ 追加</button>
     </div>
 
-    {/* Bulk action bar */}
-    {selected.size > 0 && <div style={{
-      display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", marginBottom: 10,
-      background: C.accent + "14", borderRadius: 10, border: `1px solid ${C.accent}30`,
-    }}>
+    {selected.size > 0 && <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", marginBottom: 10, background: C.accent + "14", borderRadius: 10, border: `1px solid ${C.accent}30` }}>
       <span style={{ fontSize: 12, fontWeight: 700, color: C.accentL }}>{selected.size}名 選択中</span>
       <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} style={{ ...inp, width: 160, appearance: "auto", fontSize: 11 }}>
-        <option value="">ステータス一括変更</option>
-        {STATUS_LIST.map(s => <option key={s}>{s}</option>)}
+        <option value="">ステータス一括変更</option>{STATUS_LIST.map(s => <option key={s}>{s}</option>)}
       </select>
       <button onClick={() => { if (bulkStatus) { onBulkStatus([...selected], bulkStatus); setSelected(new Set()); setBulkStatus(""); } }} style={{ ...btnS, background: bulkStatus ? C.accent : C.surfaceAlt, color: bulkStatus ? "#fff" : C.textDim, fontSize: 11, padding: "6px 14px" }}>適用</button>
       <div style={{ flex: 1 }} />
-      <button onClick={() => { if (confirm(`${selected.size}名を削除しますか？`)) { onBulkDelete([...selected]); setSelected(new Set()); } }} style={{ ...btnS, background: C.badBg, color: C.bad, fontSize: 11, padding: "6px 14px" }}>一括削除</button>
-      <button onClick={() => setSelected(new Set())} style={{ ...btnS, background: "transparent", color: C.textDim, fontSize: 11, padding: "6px 8px" }}>✕</button>
+      <button onClick={() => { if (confirm(`${selected.size}名を削除しますか？`)) { onBulkDelete([...selected]); setSelected(new Set()); } }} style={{ ...btnS, background: C.badBg, color: C.bad, fontSize: 11 }}>一括削除</button>
+      <button onClick={() => setSelected(new Set())} style={{ ...btnS, background: "transparent", color: C.textDim, fontSize: 11 }}>✕</button>
     </div>}
 
     <div style={{ fontSize: 11, color: C.textSub, marginBottom: 8 }}>{filtered.length}件 / {candidates.length}件</div>
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead><tr style={{ borderBottom: `2px solid ${C.border}` }}>
-          <th style={{ padding: "8px 6px", width: 32 }}>
-            <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ accentColor: C.accent, width: 14, height: 14, cursor: "pointer" }} />
-          </th>
-          {["氏名", "ステータス", "ボール", "職種", "経由", "応募日", "一次", "最終", "状況"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: C.textDim, fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>)}
+          <th style={{ padding: "8px 6px", width: 32 }}><input type="checkbox" checked={allSel} onChange={toggleAll} style={{ accentColor: C.accent, cursor: "pointer" }} /></th>
+          {["氏名", "ステータス", "職種", "経由", "応募日", "経過", "一次面接", "最終面接", "書類"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 8px", color: C.textDim, fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>)}
         </tr></thead>
-        <tbody>{filtered.map(c => <tr key={c.id} style={{ borderBottom: `1px solid ${C.border}`, cursor: "pointer", background: selected.has(c.id) ? C.accent + "0a" : "transparent" }}
-          onMouseEnter={e => { if (!selected.has(c.id)) e.currentTarget.style.background = C.surfaceAlt; }}
-          onMouseLeave={e => { e.currentTarget.style.background = selected.has(c.id) ? C.accent + "0a" : "transparent"; }}>
-          <td style={{ padding: "8px 6px" }} onClick={e => e.stopPropagation()}>
-            <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleOne(c.id)} style={{ accentColor: C.accent, width: 14, height: 14, cursor: "pointer" }} />
-          </td>
-          <td style={{ padding: "8px 10px", color: C.text, fontWeight: 600, whiteSpace: "nowrap" }} onClick={() => onSelect(c)}>{c.name || "（未入力）"}</td>
-          <td style={{ padding: "8px 10px" }} onClick={() => onSelect(c)}><Badge status={c.status} /></td>
-          <td style={{ padding: "8px 10px", color: C.textSub }} onClick={() => onSelect(c)}>{c.ball}</td>
-          <td style={{ padding: "8px 10px", color: C.textSub, whiteSpace: "nowrap" }} onClick={() => onSelect(c)}>{c.position}</td>
-          <td style={{ padding: "8px 10px", color: C.textSub }} onClick={() => onSelect(c)}>{c.source}</td>
-          <td style={{ padding: "8px 10px", color: C.textSub, whiteSpace: "nowrap" }} onClick={() => onSelect(c)}>{c.appliedDate}</td>
-          <td style={{ padding: "8px 10px", color: C.textSub, whiteSpace: "nowrap" }} onClick={() => onSelect(c)}>{c.interview1Date}</td>
-          <td style={{ padding: "8px 10px", color: C.textSub, whiteSpace: "nowrap" }} onClick={() => onSelect(c)}>{c.interviewFinalDate}</td>
-          <td style={{ padding: "8px 10px" }} onClick={() => onSelect(c)}><span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: c.situation === "Open" ? C.okBg : C.badBg, color: c.situation === "Open" ? C.ok : C.bad }}>{c.situation}</span></td>
-        </tr>)}</tbody></table>
+        <tbody>{filtered.map(c => {
+          const days = daysFromApply(c);
+          return <tr key={c.id} style={{ borderBottom: `1px solid ${C.border}`, background: selected.has(c.id) ? C.accent + "0a" : "transparent" }}
+            onMouseEnter={e => { if (!selected.has(c.id)) e.currentTarget.style.background = C.surfaceAlt; }}
+            onMouseLeave={e => { e.currentTarget.style.background = selected.has(c.id) ? C.accent + "0a" : "transparent"; }}>
+            <td style={{ padding: "8px 6px" }} onClick={e => e.stopPropagation()}><input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleOne(c.id)} style={{ accentColor: C.accent, cursor: "pointer" }} /></td>
+            <td style={{ padding: "8px 8px", color: C.text, fontWeight: 600, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{c.name || "（未入力）"}</td>
+            <td style={{ padding: "8px 8px", cursor: "pointer" }} onClick={() => onSelect(c)}><Badge status={c.status} /></td>
+            <td style={{ padding: "8px 8px", color: C.textSub, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{c.position}</td>
+            <td style={{ padding: "8px 8px", color: C.textSub, cursor: "pointer" }} onClick={() => onSelect(c)}>{c.source}</td>
+            <td style={{ padding: "8px 8px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{fmtDate(c.appliedDate)}</td>
+            <td style={{ padding: "8px 8px", cursor: "pointer" }} onClick={() => onSelect(c)}><DaysChip days={days} /></td>
+            <td style={{ padding: "8px 8px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{fmtDateTime(c.interview1Date, c.interview1Time)}</td>
+            <td style={{ padding: "8px 8px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{fmtDateTime(c.interviewFinalDate, c.interviewFinalTime)}</td>
+            <td style={{ padding: "8px 8px", cursor: "pointer" }} onClick={() => onSelect(c)}>{c.documentUrl && <a href={c.documentUrl} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ color: C.accentL, fontSize: 10 }}>書類</a>}</td>
+          </tr>;
+        })}</tbody>
+      </table>
       {filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: C.textDim, fontSize: 13 }}>該当なし</div>}
     </div>
   </div>;
 }
 
+// ─── Kanban View ───
 function KanbanView({ candidates, onSelect, onStatusChange }) {
   const [dragId, setDragId] = useState(null);
   return <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 16, minHeight: 400 }}>
@@ -618,8 +355,11 @@ function KanbanView({ candidates, onSelect, onStatusChange }) {
             style={{ background: C.card, borderRadius: 10, padding: "9px 11px", cursor: "grab", border: `1px solid ${C.border}`, transition: "all .15s" }}
             onMouseEnter={e => { e.currentTarget.style.background = C.cardHover; e.currentTarget.style.borderColor = C.accent + "40"; }}
             onMouseLeave={e => { e.currentTarget.style.background = C.card; e.currentTarget.style.borderColor = C.border; }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 5 }}>{c.name || "（未入力）"}</div>
-            <Badge status={c.status} />
+            <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 4 }}>{c.name || "（未入力）"}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Badge status={c.status} />
+              <DaysChip days={daysFromApply(c)} />
+            </div>
             <div style={{ display: "flex", gap: 6, marginTop: 5, fontSize: 10, color: C.textSub }}><span>{c.position?.slice(0, 6)}</span><span>{c.source}</span></div>
           </div>)}
         </div>
@@ -628,6 +368,7 @@ function KanbanView({ candidates, onSelect, onStatusChange }) {
   </div>;
 }
 
+// ─── Interview View ───
 function InterviewView({ candidates, onSelect }) {
   const today = new Date().toISOString().slice(0, 10);
   const upcoming = useMemo(() => {
@@ -636,33 +377,37 @@ function InterviewView({ candidates, onSelect }) {
       if (c.interview1Date && c.interview1Date >= today && !c.interview1Result) r.push({ ...c, type: "一次", date: c.interview1Date, time: c.interview1Time, who: c.interviewer1 });
       if (c.interviewFinalDate && c.interviewFinalDate >= today && !c.interviewFinalResult) r.push({ ...c, type: "最終", date: c.interviewFinalDate, time: c.interviewFinalTime, who: c.interviewerFinal });
     });
-    return r.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+    return r.sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
   }, [candidates, today]);
   const past = useMemo(() => {
     const r = [];
     candidates.forEach(c => {
-      if (c.interview1Date && c.interview1Result) r.push({ ...c, type: "一次", date: c.interview1Date, result: c.interview1Result, note: c.interview1Note });
-      if (c.interviewFinalDate && c.interviewFinalResult) r.push({ ...c, type: "最終", date: c.interviewFinalDate, result: c.interviewFinalResult, note: c.interviewFinalNote });
+      if (c.interview1Date && c.interview1Result) r.push({ ...c, type: "一次", date: c.interview1Date, result: c.interview1Result, note: c.interview1Note, passReason: c.interview1PassReason, rejectReason: c.interview1RejectReason });
+      if (c.interviewFinalDate && c.interviewFinalResult) r.push({ ...c, type: "最終", date: c.interviewFinalDate, result: c.interviewFinalResult, note: c.interviewFinalNote, passReason: c.interviewFinalPassReason, rejectReason: c.interviewFinalRejectReason });
     });
     return r.sort((a, b) => b.date.localeCompare(a.date));
   }, [candidates]);
   return <div>
     <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 10 }}>今後の面接（{upcoming.length}件）</h3>
     {upcoming.length === 0 && <p style={{ color: C.textDim, fontSize: 12 }}>予定なし</p>}
-    <div style={{ display: "grid", gap: 6, marginBottom: 24 }}>{upcoming.map((it, i) => <div key={it.id + it.type + i} onClick={() => onSelect(it)} style={{ background: C.card, borderRadius: 12, padding: "12px 14px", border: `1px solid ${C.border}`, cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }} onMouseEnter={e => e.currentTarget.style.borderColor = C.accent + "50"} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
+    <div style={{ display: "grid", gap: 6, marginBottom: 24 }}>{upcoming.map((it, i) => <div key={it.id + it.type + i} onClick={() => onSelect(it)} style={{ background: C.card, borderRadius: 12, padding: "12px 14px", border: `1px solid ${C.border}`, cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}
+      onMouseEnter={e => e.currentTarget.style.borderColor = C.accent + "50"} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
       <div style={{ minWidth: 48, textAlign: "center", background: C.accentD + "28", borderRadius: 10, padding: "7px 4px" }}><div style={{ fontSize: 17, fontWeight: 800, color: C.accentL }}>{it.date.slice(8)}</div><div style={{ fontSize: 9, color: C.textSub }}>{it.date.slice(5, 7)}月</div></div>
-      <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 3 }}>{it.name}</div><div style={{ fontSize: 11, color: C.textSub }}>{it.type}面接　{it.time}　{it.who || "担当未設定"}</div></div>
+      <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 3 }}>{it.name}</div><div style={{ fontSize: 11, color: C.textSub }}>{it.type}面接　{fmtDateTime(it.date, it.time)}　{it.who || "担当未設定"}</div></div>
       <Badge status={it.status} />
     </div>)}</div>
     <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 10 }}>面接結果（直近{Math.min(past.length, 20)}件）</h3>
     <div style={{ display: "grid", gap: 6 }}>{past.slice(0, 20).map((it, i) => <div key={it.id + it.type + i} onClick={() => onSelect(it)} style={{ background: C.card, borderRadius: 10, padding: "10px 14px", border: `1px solid ${C.border}`, cursor: "pointer" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}><span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{it.name}</span><span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: it.result === "合格" ? C.okBg : it.result === "不合格" ? C.badBg : C.warnBg, color: it.result === "合格" ? C.ok : it.result === "不合格" ? C.bad : C.warn }}>{it.result}</span></div>
-      <div style={{ fontSize: 11, color: C.textSub }}>{it.type}面接　{it.date}</div>
+      <div style={{ fontSize: 11, color: C.textSub }}>{it.type}面接　{fmtDate(it.date)}</div>
+      {it.result === "合格" && it.passReason && <div style={{ fontSize: 11, color: C.ok, marginTop: 3 }}>通過理由: {it.passReason}</div>}
+      {it.result === "不合格" && it.rejectReason && <div style={{ fontSize: 11, color: C.bad, marginTop: 3 }}>お見送り理由: {it.rejectReason}</div>}
       {it.note && <div style={{ fontSize: 11, color: C.textDim, marginTop: 3 }}>所感: {it.note}</div>}
     </div>)}</div>
   </div>;
 }
 
+// ─── Analytics Dashboard (v2) ───
 function AnalyticsView({ candidates }) {
   const [dt, setDt] = useState("funnel");
   const s = useMemo(() => {
@@ -672,8 +417,6 @@ function AnalyticsView({ candidates }) {
     const OFFER = ["内定：オファー面談", "内定：承諾", "入社済み"];
     const ACCEPTED = ["内定：承諾", "入社済み"];
     const total = candidates.length;
-    const open = candidates.filter(c => c.situation === "Open").length;
-    const docR = candidates.filter(c => c.status !== "辞退" || c.interview1Date).length;
     const docP = candidates.filter(c => PASS_DOC.includes(c.status)).length;
     const i1D = candidates.filter(c => c.interview1Result).length;
     const i1P = candidates.filter(c => PASS_1.includes(c.status) || c.interview1Result === "合格").length;
@@ -684,6 +427,16 @@ function AnalyticsView({ candidates }) {
     const entered = candidates.filter(c => c.status === "入社済み").length;
     const withdrew = candidates.filter(c => c.status === "辞退").length;
     const offerDec = candidates.filter(c => c.status === "内定：辞退").length;
+    // Speed analysis
+    const speeds = { toInt1: [], toIntF: [], toOffer: [], total: [] };
+    candidates.forEach(c => {
+      if (c.appliedDate && c.interview1Date) { const d = daysBetween(c.appliedDate, c.interview1Date); if (d !== null && d >= 0) speeds.toInt1.push(d); }
+      if (c.appliedDate && c.interviewFinalDate) { const d = daysBetween(c.appliedDate, c.interviewFinalDate); if (d !== null && d >= 0) speeds.toIntF.push(d); }
+      if (c.appliedDate && c.offerDate) { const d = daysBetween(c.appliedDate, c.offerDate); if (d !== null && d >= 0) speeds.toOffer.push(d); }
+      if (c.appliedDate && (c.status === "内定：承諾" || c.status === "入社済み") && c.offerDate) { const d = daysBetween(c.appliedDate, c.offerDate); if (d !== null && d >= 0) speeds.total.push(d); }
+    });
+    const avg = (arr) => arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+    // By source & position
     const bySrc = {}; const byPos = {};
     candidates.forEach(c => {
       const src = c.source || "不明";
@@ -695,14 +448,19 @@ function AnalyticsView({ candidates }) {
       if (!byPos[p]) byPos[p] = { applied: 0, docPass: 0, offer: 0, accepted: 0, inProc: 0 };
       byPos[p].applied++; if (PASS_DOC.includes(c.status)) byPos[p].docPass++; if (OFFER.includes(c.status)) byPos[p].offer++;
       if (ACCEPTED.includes(c.status)) byPos[p].accepted++;
-      if (c.situation === "Open" && !["辞退", "内定：辞退", "一次：不合格", "最終：不合格", "入社済み"].includes(c.status)) byPos[p].inProc++;
+      if (!["辞退", "内定：辞退", "一次：不合格", "最終：不合格", "書類お見送り", "入社済み"].includes(c.status)) byPos[p].inProc++;
     });
-    const decList = candidates.filter(c => c.status === "辞退" || c.status === "内定：辞退").map(c => ({ name: c.name, pos: c.position, src: c.source, st: c.status, memo: c.memo, timing: c.status === "内定：辞退" ? "内定辞退" : c.interview1Result ? "選考中辞退" : "選考前辞退" }));
-    const inProc = candidates.filter(c => c.situation === "Open" && !["辞退", "内定：辞退", "一次：不合格", "最終：不合格", "入社済み"].includes(c.status));
-    return { total, open, docR, docP, i1D, i1P, iFD, iFP, offer, accepted, entered, withdrew, offerDec, allDec: withdrew + offerDec, bySrc, byPos, decList, inProc };
+    // Reject reasons
+    const rejectReasons = {};
+    candidates.forEach(c => {
+      [c.docScreeningReason, c.interview1RejectReason, c.interviewFinalRejectReason].forEach(r => { if (r) rejectReasons[r] = (rejectReasons[r] || 0) + 1; });
+    });
+    const decList = candidates.filter(c => c.status === "辞退" || c.status === "内定：辞退").map(c => ({ name: c.name, pos: c.position, src: c.source, st: c.status, memo: c.memo, reason: c.withdrawReason || "", timing: c.status === "内定：辞退" ? "内定辞退" : c.interview1Result ? "選考中辞退" : "選考前辞退" }));
+    const inProc = candidates.filter(c => !["辞退", "内定：辞退", "一次：不合格", "最終：不合格", "書類お見送り", "入社済み"].includes(c.status));
+    return { total, docP, i1D, i1P, iFD, iFP, offer, accepted, entered, withdrew, offerDec, allDec: withdrew + offerDec, bySrc, byPos, decList, inProc, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons };
   }, [candidates]);
 
-  const dtabs = [{ key: "funnel", label: "ファネル", icon: "▼" }, { key: "channel", label: "チャネル別", icon: "◈" }, { key: "decline", label: "辞退分析", icon: "⚠" }, { key: "position", label: "職種別", icon: "◉" }, { key: "pipeline", label: "パイプライン", icon: "◎" }];
+  const dtabs = [{ key: "funnel", label: "ファネル", icon: "▼" }, { key: "speed", label: "選考スピード", icon: "⏱" }, { key: "channel", label: "チャネル別", icon: "◈" }, { key: "decline", label: "辞退分析", icon: "⚠" }, { key: "position", label: "職種別", icon: "◉" }, { key: "pipeline", label: "パイプライン", icon: "◎" }];
 
   return <div>
     <div style={{ display: "flex", gap: 4, marginBottom: 20, flexWrap: "wrap" }}>
@@ -710,27 +468,41 @@ function AnalyticsView({ candidates }) {
     </div>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 24 }}>
       <KPICard label="応募総数" value={s.total} icon="📥" color={C.info} />
-      <KPICard label="選考中" value={s.open} sub={`Close: ${s.total - s.open}`} icon="🔄" color={C.warn} />
-      <KPICard label="書類通過" value={s.docP} sub={s.docR > 0 ? `通過率 ${Math.round((s.docP / s.docR) * 100)}%` : ""} icon="📄" color={C.accent} />
+      <KPICard label="書類通過" value={s.docP} sub={s.total > 0 ? `通過率 ${Math.round((s.docP / s.total) * 100)}%` : ""} icon="📄" color={C.accent} />
       <KPICard label="一次通過" value={s.i1P} sub={s.i1D > 0 ? `通過率 ${Math.round((s.i1P / s.i1D) * 100)}%` : ""} icon="🗣" color="#8b5cf6" />
       <KPICard label="内定" value={s.offer} sub={s.total > 0 ? `転換率 ${(s.offer / s.total * 100).toFixed(1)}%` : ""} icon="🎯" color={C.accentL} />
       <KPICard label="承諾/入社" value={s.accepted + s.entered} icon="✅" color={C.ok} />
       <KPICard label="辞退" value={s.allDec} sub={s.offerDec > 0 ? `内定辞退 ${s.offerDec}名` : ""} icon="↩" color={C.bad} />
+      <KPICard label="平均選考日数" value={s.speeds.toOffer !== null ? s.speeds.toOffer + "日" : "–"} sub="応募→内定" icon="⏱" color={C.warn} />
     </div>
 
     {dt === "funnel" && <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
       <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 20px" }}>選考ファネル</h3>
       <FunnelBar label="応募" value={s.total} maxVal={s.total} color={C.info} />
-      <FunnelBar label="書類通過" value={s.docP} maxVal={s.total} rate={s.docR > 0 ? Math.round((s.docP / s.docR) * 100) : 0} color={C.accent} sub={`不合格: ${s.docR - s.docP}名`} />
+      <FunnelBar label="書類通過" value={s.docP} maxVal={s.total} rate={s.total > 0 ? Math.round((s.docP / s.total) * 100) : 0} color={C.accent} />
       <FunnelBar label="一次通過" value={s.i1P} maxVal={s.total} rate={s.i1D > 0 ? Math.round((s.i1P / s.i1D) * 100) : 0} color="#8b5cf6" sub={`実施済: ${s.i1D}名`} />
       <FunnelBar label="最終通過" value={s.iFP} maxVal={s.total} rate={s.iFD > 0 ? Math.round((s.iFP / s.iFD) * 100) : 0} color="#06b6d4" sub={`実施済: ${s.iFD}名`} />
-      <FunnelBar label="内定" value={s.offer} maxVal={s.total} color={C.accentL} sub={`内定辞退: ${s.offerDec}名`} />
+      <FunnelBar label="内定" value={s.offer} maxVal={s.total} color={C.accentL} />
       <FunnelBar label="承諾・入社" value={s.accepted + s.entered} maxVal={s.total} rate={s.offer > 0 ? Math.round(((s.accepted + s.entered) / s.offer) * 100) : 0} color={C.ok} />
-      <div style={{ marginTop: 24, padding: "14px 16px", background: C.surfaceAlt, borderRadius: 10, border: `1px solid ${C.border}` }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>主要KPI</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(100px, 1fr))", gap: 8 }}>
-          {[{ l: "書類通過率", v: s.docR > 0 ? `${Math.round((s.docP / s.docR) * 100)}%` : "–" }, { l: "一次通過率", v: s.i1D > 0 ? `${Math.round((s.i1P / s.i1D) * 100)}%` : "–" }, { l: "最終通過率", v: s.iFD > 0 ? `${Math.round((s.iFP / s.iFD) * 100)}%` : "–" }, { l: "内定辞退率", v: s.offer + s.offerDec > 0 ? `${Math.round((s.offerDec / (s.offer + s.offerDec)) * 100)}%` : "–" }, { l: "応募→内定率", v: s.total > 0 ? `${(s.offer / s.total * 100).toFixed(1)}%` : "–" }, { l: "応募→承諾率", v: s.total > 0 ? `${((s.accepted + s.entered) / s.total * 100).toFixed(1)}%` : "–" }].map(k => <div key={k.l} style={{ padding: "8px 10px", background: C.card, borderRadius: 8 }}><div style={{ fontSize: 10, color: C.textDim }}>{k.l}</div><div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{k.v}</div></div>)}
-        </div>
+      {Object.keys(s.rejectReasons).length > 0 && <div style={{ marginTop: 20, padding: "14px 16px", background: C.surfaceAlt, borderRadius: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>お見送り理由の傾向</div>
+        {Object.entries(s.rejectReasons).sort((a, b) => b[1] - a[1]).map(([r, cnt]) => <div key={r} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 12, color: C.textSub }}><span>{r}</span><span style={{ fontWeight: 700 }}>{cnt}件</span></div>)}
+      </div>}
+    </div>}
+
+    {dt === "speed" && <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
+      <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 20px" }}>選考スピード分析</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>
+        {[{ l: "応募 → 一次面接", v: s.speeds.toInt1, target: 14 }, { l: "応募 → 最終面接", v: s.speeds.toIntF, target: 28 }, { l: "応募 → 内定", v: s.speeds.toOffer, target: 35 }, { l: "応募 → 承諾（全体）", v: s.speeds.total, target: 42 }].map(k => (
+          <div key={k.l} style={{ background: C.surfaceAlt, borderRadius: 12, padding: "18px 16px", border: `1px solid ${C.border}` }}>
+            <div style={{ fontSize: 11, color: C.textSub, marginBottom: 8 }}>{k.l}</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: k.v !== null ? (k.v <= k.target ? C.ok : k.v <= k.target * 1.5 ? C.warn : C.bad) : C.textDim }}>{k.v !== null ? k.v + "日" : "–"}</div>
+            <div style={{ fontSize: 10, color: C.textDim, marginTop: 4 }}>目安: {k.target}日以内</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 16, padding: "12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 11, color: C.textSub }}>
+        選考スピードは候補者の意欲維持に直結します。一般的に応募から一次面接まで2週間以内、内定まで5週間以内が理想とされています。
       </div>
     </div>}
 
@@ -738,95 +510,187 @@ function AnalyticsView({ candidates }) {
       <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>チャネル別分析</h3>
       <div style={{ minWidth: 620 }}>
         <div style={{ display: "grid", gridTemplateColumns: "140px 1fr 60px 60px 60px 60px 70px", gap: 8, padding: "6px 0", borderBottom: `2px solid ${C.border}`, fontSize: 10, color: C.textDim, fontWeight: 700 }}>
-          <span>チャネル</span><span>応募数</span><span style={{ textAlign: "center" }}>書類通過</span><span style={{ textAlign: "center" }}>一次通過</span><span style={{ textAlign: "center" }}>最終通過</span><span style={{ textAlign: "center" }}>内定</span><span style={{ textAlign: "center" }}>書類通過率</span>
+          <span>チャネル</span><span>応募数</span><span style={{ textAlign: "center" }}>書類通過</span><span style={{ textAlign: "center" }}>一次通過</span><span style={{ textAlign: "center" }}>最終通過</span><span style={{ textAlign: "center" }}>内定</span><span style={{ textAlign: "center" }}>通過率</span>
         </div>
         {Object.entries(s.bySrc).sort((a, b) => b[1].applied - a[1].applied).map(([nm, d]) => {
           const mx = Math.max(...Object.values(s.bySrc).map(x => x.applied));
           return <div key={nm} style={{ display: "grid", gridTemplateColumns: "140px 1fr 60px 60px 60px 60px 70px", gap: 8, alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.border}`, fontSize: 12 }}>
             <span style={{ color: C.text, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nm}</span>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ height: 8, background: C.accent, borderRadius: 4, width: `${Math.max((d.applied / mx) * 100, 3)}%` }} /><span style={{ color: C.textSub, fontSize: 11, flexShrink: 0 }}>{d.applied}</span></div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}><div style={{ height: 8, background: C.accent, borderRadius: 4, width: `${Math.max((d.applied / mx) * 100, 3)}%` }} /><span style={{ color: C.textSub, fontSize: 11 }}>{d.applied}</span></div>
             <span style={{ color: C.textSub, textAlign: "center" }}>{d.docPass}</span><span style={{ color: C.textSub, textAlign: "center" }}>{d.pass1}</span><span style={{ color: C.textSub, textAlign: "center" }}>{d.passF}</span>
             <span style={{ color: d.offer > 0 ? C.ok : C.textDim, textAlign: "center", fontWeight: d.offer > 0 ? 700 : 400 }}>{d.offer}</span>
             <span style={{ color: C.textSub, textAlign: "center" }}>{d.applied > 0 ? Math.round((d.docPass / d.applied) * 100) + "%" : "–"}</span>
           </div>;
         })}
       </div>
-      <div style={{ marginTop: 16, padding: "12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 11, color: C.textSub }}>
-        {(() => { const ent = Object.entries(s.bySrc).sort((a, b) => b[1].applied - a[1].applied); const top = ent[0]; const conv = ent.filter(([, d]) => d.accepted > 0); const hd = ent.filter(([, d]) => d.declined >= 2);
-          return <div>{top && <div style={{ marginBottom: 4 }}>応募数最多: {top[0]}（{top[1].applied}名）</div>}{conv.length > 0 && <div style={{ marginBottom: 4 }}>承諾実績: {conv.map(([n]) => n).join("、")}</div>}{hd.length > 0 && <div style={{ color: C.warn }}>辞退多発: {hd.map(([n, d]) => `${n}(${d.declined}名)`).join("、")}</div>}</div>;
-        })()}
-      </div>
     </div>}
 
     {dt === "decline" && <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
-      <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>離脱・辞退分析</h3>
+      <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>辞退分析</h3>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 20 }}>
         <KPICard label="辞退合計" value={s.allDec} icon="↩" color={C.bad} />
         <KPICard label="内定辞退" value={s.offerDec} icon="✕" color={C.bad} sub={s.offer + s.offerDec > 0 ? `辞退率 ${Math.round((s.offerDec / (s.offer + s.offerDec)) * 100)}%` : ""} />
         <KPICard label="選考中辞退" value={s.withdrew} icon="↪" color={C.warn} />
       </div>
-      {s.decList.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.textDim, fontSize: 13 }}>辞退者なし</div> : <div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.textSub, marginBottom: 8 }}>辞退者一覧</div>
-        <div style={{ display: "grid", gap: 6 }}>{s.decList.map((d, i) => <div key={i} style={{ display: "grid", gridTemplateColumns: "90px 1fr 90px 80px 1fr", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
+      {s.decList.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.textDim }}>辞退者なし</div> : <div>
+        <div style={{ display: "grid", gap: 6 }}>{s.decList.map((d, i) => <div key={i} style={{ display: "grid", gridTemplateColumns: "90px 1fr 90px 80px 100px", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
           <span style={{ color: C.text, fontWeight: 600 }}>{d.name}</span><span style={{ color: C.textSub }}>{d.pos?.slice(0, 8)}</span><span style={{ color: C.textSub }}>{d.src}</span>
           <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 8, background: d.timing === "内定辞退" ? C.badBg : C.warnBg, color: d.timing === "内定辞退" ? C.bad : C.warn, whiteSpace: "nowrap" }}>{d.timing}</span>
-          <span style={{ color: C.textDim, fontSize: 11 }}>{d.memo || "–"}</span>
+          <span style={{ color: C.textDim, fontSize: 11 }}>{d.reason || "–"}</span>
         </div>)}</div>
-        <div style={{ marginTop: 16, padding: "12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 11 }}>
-          <div style={{ fontWeight: 700, color: C.text, marginBottom: 6 }}>経由内訳</div>
-          {(() => { const x = {}; s.decList.forEach(d => { x[d.src || "不明"] = (x[d.src || "不明"] || 0) + 1; }); return Object.entries(x).sort((a, b) => b[1] - a[1]).map(([src, cnt]) => <div key={src} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", color: C.textSub }}><span>{src}</span><span style={{ fontWeight: 700, color: cnt >= 2 ? C.bad : C.textSub }}>{cnt}名</span></div>); })()}
-        </div>
       </div>}
     </div>}
 
     {dt === "position" && <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
       <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>職種別分析</h3>
-      <div style={{ display: "grid", gap: 14 }}>{Object.entries(s.byPos).sort((a, b) => b[1].applied - a[1].applied).map(([pos, d]) => {
+      {Object.entries(s.byPos).sort((a, b) => b[1].applied - a[1].applied).map(([pos, d]) => {
         const mx = Math.max(...Object.values(s.byPos).map(x => x.applied), 1);
-        return <div key={pos} style={{ background: C.surfaceAlt, borderRadius: 12, padding: "16px 18px", border: `1px solid ${C.border}` }}>
+        return <div key={pos} style={{ background: C.surfaceAlt, borderRadius: 12, padding: "16px 18px", border: `1px solid ${C.border}`, marginBottom: 12 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}><span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{pos}</span><span style={{ fontSize: 22, fontWeight: 800, color: C.accent }}>{d.applied}</span></div>
           <div style={{ height: 8, background: C.bg, borderRadius: 4, marginBottom: 12 }}><div style={{ height: "100%", width: `${(d.applied / mx) * 100}%`, background: `linear-gradient(90deg, ${C.accent}, ${C.accentL})`, borderRadius: 4 }} /></div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-            {[{ l: "書類通過", v: d.docPass, r: d.applied > 0 ? `${Math.round((d.docPass / d.applied) * 100)}%` : "–" }, { l: "内定", v: d.offer }, { l: "承諾", v: d.accepted }, { l: "選考中", v: d.inProc }].map(k => <div key={k.l} style={{ textAlign: "center" }}><div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{k.v}</div><div style={{ fontSize: 10, color: C.textDim }}>{k.l}</div>{k.r && <div style={{ fontSize: 9, color: C.textSub }}>{k.r}</div>}</div>)}
+            {[{ l: "書類通過", v: d.docPass }, { l: "内定", v: d.offer }, { l: "承諾", v: d.accepted }, { l: "選考中", v: d.inProc }].map(k => <div key={k.l} style={{ textAlign: "center" }}><div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{k.v}</div><div style={{ fontSize: 10, color: C.textDim }}>{k.l}</div></div>)}
           </div>
-          {d.inProc === 0 && d.offer === 0 && <div style={{ marginTop: 8, padding: "6px 10px", background: C.warnBg, borderRadius: 8, fontSize: 11, color: C.warn, fontWeight: 600 }}>⚠ 選考中・内定者なし。母集団形成を検討してください。</div>}
+          {d.inProc === 0 && d.offer === 0 && <div style={{ marginTop: 8, padding: "6px 10px", background: C.warnBg, borderRadius: 8, fontSize: 11, color: C.warn, fontWeight: 600 }}>⚠ 選考中・内定者なし</div>}
         </div>;
-      })}</div>
+      })}
     </div>}
 
     {dt === "pipeline" && <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
-      <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>選考中パイプライン（{s.inProc.length}名）</h3>
-      {s.inProc.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.textDim, fontSize: 13 }}>選考中の候補者なし</div> :
-      <div style={{ display: "grid", gap: 6 }}>{s.inProc.sort((a, b) => STATUS_LIST.indexOf(a.status) - STATUS_LIST.indexOf(b.status)).map(c => <div key={c.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 110px 90px 1fr", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
-        <span style={{ color: C.text, fontWeight: 600 }}>{c.name}</span><span style={{ color: C.textSub }}>{c.position?.slice(0, 10)}</span><Badge status={c.status} /><span style={{ color: C.textSub }}>{c.source}</span>
-        <span style={{ color: C.textDim, fontSize: 11 }}>{c.memo ? c.memo.slice(0, 30) + (c.memo.length > 30 ? "…" : "") : "–"}</span>
+      <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>パイプライン（{s.inProc.length}名）</h3>
+      {s.inProc.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.textDim }}>選考中なし</div> :
+      <div style={{ display: "grid", gap: 6 }}>{s.inProc.sort((a, b) => STATUS_LIST.indexOf(a.status) - STATUS_LIST.indexOf(b.status)).map(c => <div key={c.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 110px 90px 50px", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
+        <span style={{ color: C.text, fontWeight: 600 }}>{c.name}</span><span style={{ color: C.textSub }}>{c.position?.slice(0, 10)}</span><Badge status={c.status} /><span style={{ color: C.textSub }}>{c.source}</span><DaysChip days={daysFromApply(c)} />
       </div>)}</div>}
     </div>}
   </div>;
 }
 
-// ─── GAS API Client ───
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyBnmVegbUAJDRmmk8H4CXNi5L1vmZL8DjijFfRVlJ1Mmmkmh9xp9vWRU2YWOzij3SG/exec";
+// ─── CSV functions ───
+function parseCSV(text) {
+  const lines = []; let cur = []; let field = ""; let inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQ) { if (ch === '"' && text[i + 1] === '"') { field += '"'; i++; } else if (ch === '"') inQ = false; else field += ch; }
+    else { if (ch === '"') inQ = true; else if (ch === ',') { cur.push(field.trim()); field = ""; } else if (ch === '\n' || (ch === '\r' && text[i + 1] === '\n')) { cur.push(field.trim()); if (cur.some(c => c)) lines.push(cur); cur = []; field = ""; if (ch === '\r') i++; } else field += ch; }
+  }
+  cur.push(field.trim()); if (cur.some(c => c)) lines.push(cur);
+  return lines;
+}
+function mapStatus(raw) {
+  if (!raw) return "書類選考中";
+  const s = raw.trim();
+  const exact = STATUS_LIST.find(st => st === s); if (exact) return exact;
+  if (s.includes("不合格") && s.includes("一次")) return "一次：不合格";
+  if (s.includes("不合格") && s.includes("最終")) return "最終：不合格";
+  if (s.includes("合格") && s.includes("一次")) return "一次：合格";
+  if (s.includes("合格") && s.includes("最終")) return "最終：合格";
+  if (s.includes("日程確定") && s.includes("一次")) return "一次：日程確定";
+  if (s.includes("日程確定") && s.includes("最終")) return "最終：日程確定";
+  if (s.includes("調整") && s.includes("一次")) return "一次：調整中";
+  if (s.includes("調整") && s.includes("最終")) return "最終：調整中";
+  if (s.includes("辞退") && s.includes("内定")) return "内定：辞退";
+  if (s.includes("辞退")) return "辞退";
+  if (s.includes("承諾")) return "内定：承諾";
+  if (s.includes("内定")) return "内定：オファー面談";
+  if (s.includes("適性")) return "適性検査中";
+  if (s.includes("入社")) return "入社済み";
+  if (s.includes("お見送り") && s.includes("書類")) return "書類お見送り";
+  if (s.includes("不合格") && s.includes("書類")) return "書類お見送り";
+  if (s.includes("書類")) return "書類選考中";
+  return "書類選考中";
+}
+function parseDate(raw) { if (!raw) return ""; const s = raw.trim(); const iso = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/); if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`; const jp = s.match(/(\d{1,2})\/(\d{1,2})/); if (jp) { const y = new Date().getFullYear(); return `${y}-${jp[1].padStart(2, "0")}-${jp[2].padStart(2, "0")}`; } return ""; }
+function parseTime(raw) { if (!raw) return ""; const m = raw.trim().match(/(\d{1,2}):(\d{2})/); return m ? `${m[1].padStart(2, "0")}:${m[2]}` : ""; }
+function findCol(headers, ...kw) { return headers.findIndex(h => { const hl = (h || "").replace(/\s+/g, ""); return kw.some(k => hl.includes(k)); }); }
 
+function csvToCandidate(row, hIdx) {
+  const g = (i) => i >= 0 && i < row.length ? (row[i] || "").trim() : "";
+  return { ...emptyCandidate(), name: g(hIdx.name), status: mapStatus(g(hIdx.status)), position: g(hIdx.position) || "デジタルマーケティング", source: g(hIdx.source), appliedDate: parseDate(g(hIdx.appliedDate)) || new Date().toISOString().slice(0, 10), interviewer1: g(hIdx.interviewer1), interview1Date: parseDate(g(hIdx.int1Date)), interview1Time: parseTime(g(hIdx.int1Time)), interview1Result: g(hIdx.int1Result), interview1Note: g(hIdx.int1Note), interviewFinalDate: parseDate(g(hIdx.intFDate)), interviewFinalTime: parseTime(g(hIdx.intFTime)), interviewFinalResult: g(hIdx.intFResult), interviewFinalNote: g(hIdx.intFNote), memo: g(hIdx.memo) };
+}
+function detectColumns(headers) {
+  const fc = (kw) => findCol(headers, ...kw);
+  const findNth = (kw, n) => { const all = headers.map((h, i) => ({ h: (h || "").replace(/\s+/g, ""), i })).filter(x => kw.some(k => x.h.includes(k))); return all.length > n ? all[n].i : -1; };
+  return { name: fc("氏名", "名前"), status: fc("ステータス"), position: fc("職種", "ポジション"), source: fc("経由", "チャネル", "媒体"), appliedDate: fc("応募日", "応募"), interviewer1: fc("面接官"), int1Date: findNth(["日程"], 0), int1Time: findNth(["時間"], 0), int1Result: findNth(["合否"], 0), int1Note: findNth(["所感"], 0), intFDate: findNth(["日程"], 1), intFTime: findNth(["時間"], 1), intFResult: findNth(["合否"], 1), intFNote: findNth(["所感"], 1), memo: fc("備考", "メモ") };
+}
+function exportCSV(candidates) {
+  const h = ["氏名","ステータス","職種","経由","応募日","年齢","現職社名","現職役職","現年収","希望年収","書類URL","書類お見送り理由","面接官(一次)","一次日程","一次時間","一次合否","一次通過理由","一次お見送り理由","一次所感","面接官(最終)","最終日程","最終時間","最終合否","最終通過理由","最終お見送り理由","最終所感","適性検査","オファー日","提示年収","承諾","辞退理由","入社予定日","備考"];
+  const esc = (v) => { const s = String(v ?? ""); return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s; };
+  const rows = candidates.map(c => [c.name, c.status, c.position, c.source, c.appliedDate, c.age, c.currentCompany, c.currentPosition, c.currentSalary, c.desiredSalary, c.documentUrl, c.docScreeningReason, c.interviewer1, c.interview1Date, c.interview1Time, c.interview1Result, c.interview1PassReason, c.interview1RejectReason, c.interview1Note, c.interviewerFinal, c.interviewFinalDate, c.interviewFinalTime, c.interviewFinalResult, c.interviewFinalPassReason, c.interviewFinalRejectReason, c.interviewFinalNote, c.aptitudeSent, c.offerDate, c.offerSalary, c.accepted, c.withdrawReason, c.startDate, c.memo].map(esc).join(","));
+  return "\uFEFF" + h.join(",") + "\n" + rows.join("\n");
+}
+
+// ─── Import Modal ───
+function ImportModal({ open, onClose, onImport }) {
+  const [step, setStep] = useState(1); const [preview, setPreview] = useState([]); const [importMode, setImportMode] = useState("append"); const fileRef = useRef(null);
+  const reset = () => { setStep(1); setPreview([]); };
+  const handleFile = (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const lines = parseCSV(ev.target.result); if (lines.length < 2) return;
+      let hRow = 0;
+      for (let i = 0; i < Math.min(lines.length, 10); i++) { if (lines[i].some(c => (c || "").includes("氏名") || (c || "").includes("ステータス"))) { hRow = i; break; } }
+      const idx = detectColumns(lines[hRow]);
+      const mapped = lines.slice(hRow + 1).filter(r => r.some(c => c)).map(r => csvToCandidate(r, idx)).filter(c => c.name);
+      setPreview(mapped); setStep(2);
+    };
+    reader.readAsText(file, "UTF-8");
+  };
+  if (!open) return null;
+  return <Modal open={open} onClose={() => { reset(); onClose(); }} title="CSVインポート" width={720}>
+    {step === 1 && <div>
+      <p style={{ color: C.textSub, fontSize: 13, marginBottom: 16 }}>CSVファイルを選択してください。ヘッダー行を自動検出して取り込みます。</p>
+      <div style={{ border: `2px dashed ${C.border}`, borderRadius: 12, padding: "40px 20px", textAlign: "center", cursor: "pointer" }} onClick={() => fileRef.current?.click()}
+        onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = C.accent; }} onDragLeave={e => { e.currentTarget.style.borderColor = C.border; }}
+        onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = C.border; const f = e.dataTransfer.files?.[0]; if (f) handleFile({ target: { files: [f] } }); }}>
+        <div style={{ fontSize: 32, marginBottom: 8 }}>📄</div>
+        <div style={{ color: C.text, fontWeight: 600, fontSize: 14 }}>CSVファイルを選択 or ドロップ</div>
+        <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" style={{ display: "none" }} onChange={handleFile} />
+      </div>
+    </div>}
+    {step === 2 && <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{preview.length}名のデータを検出</div>
+        <select value={importMode} onChange={e => setImportMode(e.target.value)} style={{ ...inp, width: 150, appearance: "auto", fontSize: 12 }}>
+          <option value="append">追加（既存に追加）</option><option value="replace">置換（全入替え）</option>
+        </select>
+      </div>
+      <div style={{ overflowX: "auto", maxHeight: 300, marginBottom: 16, border: `1px solid ${C.border}`, borderRadius: 10 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+          <thead><tr style={{ background: C.surfaceAlt, position: "sticky", top: 0 }}>{["氏名", "ステータス", "職種", "経由", "応募日"].map(h => <th key={h} style={{ padding: "6px 10px", textAlign: "left", color: C.textDim, fontSize: 10, fontWeight: 700 }}>{h}</th>)}</tr></thead>
+          <tbody>{preview.slice(0, 50).map((c, i) => <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+            <td style={{ padding: "5px 10px", color: C.text, fontWeight: 600 }}>{c.name}</td><td style={{ padding: "5px 10px" }}><Badge status={c.status} /></td>
+            <td style={{ padding: "5px 10px", color: C.textSub }}>{c.position}</td><td style={{ padding: "5px 10px", color: C.textSub }}>{c.source}</td>
+            <td style={{ padding: "5px 10px", color: C.textSub }}>{c.appliedDate}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between" }}>
+        <button onClick={reset} style={{ ...btnS, background: C.surfaceAlt, color: C.textSub }}>戻る</button>
+        <button onClick={() => { onImport(preview, importMode); setStep(3); }} style={{ ...btnS, background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`, color: "#fff", padding: "10px 24px" }}>{importMode === "replace" ? `${preview.length}名で置換` : `${preview.length}名を追加`}</button>
+      </div>
+    </div>}
+    {step === 3 && <div style={{ textAlign: "center", padding: "30px 0" }}>
+      <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 6 }}>{preview.length}名を取り込みました</div>
+      <button onClick={() => { reset(); onClose(); }} style={{ ...btnS, background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`, color: "#fff", padding: "10px 24px", marginTop: 12 }}>閉じる</button>
+    </div>}
+  </Modal>;
+}
+
+// ─── GAS API ───
 async function gasGet(pw, action = "list", params = {}) {
-  const url = new URL(GAS_URL);
-  url.searchParams.set("pw", pw);
-  url.searchParams.set("action", action);
+  const url = new URL(GAS_URL); url.searchParams.set("pw", pw); url.searchParams.set("action", action);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), { redirect: "follow" });
-  return res.json();
+  const res = await fetch(url.toString(), { redirect: "follow" }); return res.json();
 }
-
 async function gasPost(pw, body) {
-  const res = await fetch(GAS_URL, {
-    method: "POST",
-    redirect: "follow",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ pw, ...body }),
-  });
+  const res = await fetch(GAS_URL, { method: "POST", redirect: "follow", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ pw, ...body }) });
   return res.json();
 }
 
+// ─── Main App ───
 function App() {
   const [authed, setAuthed] = useState(false);
   const [candidates, setCandidates] = useState([]);
@@ -839,121 +703,45 @@ function App() {
   const [pwErr, setPwErr] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Load candidates from GAS after auth
   useEffect(() => {
-    if (!authed) return;
-    setLoading(true);
-    (async () => {
-      try {
-        const r = await gasGet(pw, "list");
-        if (r.ok) setCandidates(r.data || []);
-      } catch (e) { console.warn("Load error:", e); }
-      setLoading(false);
-    })();
+    if (!authed) return; setLoading(true);
+    (async () => { try { const r = await gasGet(pw, "list"); if (r.ok) setCandidates(r.data || []); } catch (e) { console.warn(e); } setLoading(false); })();
   }, [authed]);
 
-  // Save single candidate to GAS
-  const saveSingle = useCallback(async (candidate) => {
-    setSaving(true);
-    try { await gasPost(pw, { action: "save", data: candidate }); } catch (e) { console.warn("Save error:", e); }
-    setSaving(false);
-  }, [pw]);
+  const saveSingle = useCallback(async (c) => { setSaving(true); try { await gasPost(pw, { action: "save", data: c }); } catch {} setSaving(false); }, [pw]);
+  const deleteSingle = useCallback(async (id) => { try { await gasPost(pw, { action: "delete", id }); } catch {} }, [pw]);
+  const bulkSave = useCallback(async (data, mode) => { setSaving(true); try { await gasPost(pw, { action: "bulk_save", data, mode }); } catch {} setSaving(false); }, [pw]);
 
-  // Delete from GAS
-  const deleteSingle = useCallback(async (id) => {
-    try { await gasPost(pw, { action: "delete", id }); } catch (e) { console.warn("Delete error:", e); }
-  }, [pw]);
-
-  // Bulk save to GAS
-  const bulkSave = useCallback(async (data, mode) => {
-    setSaving(true);
-    try { await gasPost(pw, { action: "bulk_save", data, mode }); } catch (e) { console.warn("Bulk save error:", e); }
-    setSaving(false);
-  }, [pw]);
-
-  const upd = useCallback((nc) => { setCandidates(nc); }, []);
-
-  // Password login via GAS auth
   const handleLogin = async () => {
     if (!pw) { setPwErr("パスワードを入力してください"); return; }
     setPwErr("");
-    try {
-      const r = await gasGet(pw, "auth");
-      if (r.ok) { setAuthed(true); }
-      else setPwErr(r.message || "パスワードが違います");
-    } catch (e) { setPwErr("接続エラー: " + e.message); }
+    try { const r = await gasGet(pw, "auth"); if (r.ok) setAuthed(true); else setPwErr(r.message || "パスワードが違います"); }
+    catch (e) { setPwErr("接続エラー: " + e.message); }
   };
 
-  // Login screen
-  if (!authed) {
-    return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans JP', 'SF Pro Display', sans-serif" }}>
-      <div style={{ background: C.surface, borderRadius: 20, border: `1px solid ${C.border}`, padding: "44px 36px", width: 380, boxShadow: "0 32px 64px rgba(0,0,0,.35)", textAlign: "center" }}>
-        <div style={{ width: 50, height: 50, borderRadius: 12, background: `linear-gradient(135deg, ${C.accent}, ${C.accentL})`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", fontSize: 22 }}>⚡</div>
-        <h1 style={{ color: C.text, fontSize: 18, fontWeight: 800, margin: "0 0 4px" }}>採用管理ツール</h1>
-        <p style={{ color: C.textSub, fontSize: 11, margin: "0 0 24px" }}>NowVillage Recruitment Manager</p>
-        <input type="password" placeholder="パスワード" value={pw}
-          onChange={e => { setPw(e.target.value); setPwErr(""); }}
-          onKeyDown={e => e.key === "Enter" && handleLogin()} autoFocus
-          style={{ ...inp, marginBottom: 14, textAlign: "center", fontSize: 14 }} />
-        <button onClick={handleLogin} style={{
-          ...btnS, width: "100%", justifyContent: "center",
-          background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`,
-          color: "#fff", padding: 11, fontSize: 13,
-        }}>ログイン</button>
-        {pwErr && <p style={{ color: C.bad, fontSize: 11, marginTop: 10 }}>{pwErr}</p>}
-      </div>
-    </div>;
-  }
+  if (!authed) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans JP', 'SF Pro Display', sans-serif" }}>
+    <div style={{ background: C.surface, borderRadius: 20, border: `1px solid ${C.border}`, padding: "44px 36px", width: 380, boxShadow: "0 32px 64px rgba(0,0,0,.35)", textAlign: "center" }}>
+      <div style={{ width: 50, height: 50, borderRadius: 12, background: `linear-gradient(135deg, ${C.accent}, ${C.accentL})`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", fontSize: 22 }}>⚡</div>
+      <h1 style={{ color: C.text, fontSize: 18, fontWeight: 800, margin: "0 0 4px" }}>採用管理ツール</h1>
+      <p style={{ color: C.textSub, fontSize: 11, margin: "0 0 24px" }}>NowVillage Recruitment Manager</p>
+      <input type="password" placeholder="パスワード" value={pw} onChange={e => { setPw(e.target.value); setPwErr(""); }}
+        onKeyDown={e => e.key === "Enter" && handleLogin()} autoFocus style={{ ...inp, marginBottom: 14, textAlign: "center", fontSize: 14 }} />
+      <button onClick={handleLogin} style={{ ...btnS, width: "100%", justifyContent: "center", background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`, color: "#fff", padding: 11, fontSize: 13 }}>ログイン</button>
+      {pwErr && <p style={{ color: C.bad, fontSize: 11, marginTop: 10 }}>{pwErr}</p>}
+    </div>
+  </div>;
+
   if (loading) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.textSub, fontFamily: "'Noto Sans JP', sans-serif" }}>読み込み中…</div>;
 
-  const openNew = () => { const c = emptyCandidate(); setEditC(c); setModal({ mode: "new" }); };
+  const openNew = () => { setEditC(emptyCandidate()); setModal({ mode: "new" }); };
   const openEdit = (c) => { setEditC({ ...c }); setModal({ mode: "edit" }); };
-
-  const handleSave = async () => {
-    if (!editC) return;
-    if (modal.mode === "new") setCandidates(prev => [editC, ...prev]);
-    else setCandidates(prev => prev.map(c => c.id === editC.id ? editC : c));
-    setModal(null); setEditC(null);
-    await saveSingle(editC);
-  };
-
-  const handleDel = async () => {
-    if (!editC || !confirm("削除しますか？")) return;
-    const id = editC.id;
-    setCandidates(prev => prev.filter(c => c.id !== id));
-    setModal(null); setEditC(null);
-    await deleteSingle(id);
-  };
-
-  const handleSC = async (id, st) => {
-    const updated = candidates.map(c => c.id === id ? { ...c, status: st } : c);
-    setCandidates(updated);
-    const target = updated.find(c => c.id === id);
-    if (target) await saveSingle(target);
-  };
-
-  const handleImport = async (data, mode) => {
-    if (mode === "replace") setCandidates(data);
-    else setCandidates(prev => [...data, ...prev]);
-    await bulkSave(data, mode);
-  };
-  const handleBulkStatus = async (ids, status) => {
-    const updated = candidates.map(c => ids.includes(c.id) ? { ...c, status } : c);
-    setCandidates(updated);
-    const changed = updated.filter(c => ids.includes(c.id));
-    await bulkSave(changed, "append");
-  };
-  const handleBulkDelete = async (ids) => {
-    setCandidates(prev => prev.filter(c => !ids.includes(c.id)));
-    for (const id of ids) { await deleteSingle(id); }
-  };
-  const handleExport = () => {
-    const csv = exportCSV(candidates);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `nv_recruit_${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-  };
+  const handleSave = async () => { if (!editC) return; if (modal.mode === "new") setCandidates(p => [editC, ...p]); else setCandidates(p => p.map(c => c.id === editC.id ? editC : c)); setModal(null); setEditC(null); await saveSingle(editC); };
+  const handleDel = async () => { if (!editC || !confirm("削除しますか？")) return; const id = editC.id; setCandidates(p => p.filter(c => c.id !== id)); setModal(null); setEditC(null); await deleteSingle(id); };
+  const handleSC = async (id, st) => { const upd = candidates.map(c => c.id === id ? { ...c, status: st } : c); setCandidates(upd); const t = upd.find(c => c.id === id); if (t) await saveSingle(t); };
+  const handleImport = async (data, mode) => { if (mode === "replace") setCandidates(data); else setCandidates(p => [...data, ...p]); await bulkSave(data, mode); };
+  const handleBulkStatus = async (ids, status) => { const upd = candidates.map(c => ids.includes(c.id) ? { ...c, status } : c); setCandidates(upd); await bulkSave(upd.filter(c => ids.includes(c.id)), "append"); };
+  const handleBulkDelete = async (ids) => { setCandidates(p => p.filter(c => !ids.includes(c.id))); for (const id of ids) await deleteSingle(id); };
+  const handleExport = () => { const csv = exportCSV(candidates); const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `nv_recruit_${new Date().toISOString().slice(0, 10)}.csv`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); };
 
   const tabs = [{ key: "list", label: "一覧", icon: "☰" }, { key: "kanban", label: "カンバン", icon: "▦" }, { key: "interview", label: "面接", icon: "📋" }, { key: "analytics", label: "ダッシュボード", icon: "📊" }];
 
@@ -971,7 +759,7 @@ function App() {
       {tab === "interview" && <InterviewView candidates={candidates} onSelect={openEdit} />}
       {tab === "analytics" && <AnalyticsView candidates={candidates} />}
     </div>
-    <Modal open={!!modal} onClose={() => { setModal(null); setEditC(null); }} title={modal?.mode === "new" ? "候補者を追加" : `${editC?.name || ""} を編集`} width={620}>
+    <Modal open={!!modal} onClose={() => { setModal(null); setEditC(null); }} title={modal?.mode === "new" ? "候補者を追加" : `${editC?.name || ""} を編集`}>
       {editC && <CandidateForm candidate={editC} onChange={setEditC} onSave={handleSave} onDelete={handleDel} isNew={modal?.mode === "new"} />}
     </Modal>
     <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onImport={handleImport} />
