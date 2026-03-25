@@ -586,8 +586,8 @@ function AnalyticsView({ candidates }) {
 
     const stage = (c) => STAGE[c.status] || 0;
 
-    // 書類通過: ステージ4以上（一次の調整以降に進んだ人 = 書類を通過した）
-    const isDocPass = (c) => stage(c) >= 4;
+    // 書類通過: ステージ4以上、または一次面接のデータがある（面接していれば書類は通過済み）
+    const isDocPass = (c) => stage(c) >= 4 || !!c.interview1Date || !!c.interview1Result;
     // 一次通過: ステージ5以上 or 一次合格の記録
     const is1Pass = (c) => stage(c) >= 5 || c.interview1Result === "合格";
     // 最終通過: ステージ8以上 or 最終合格の記録
