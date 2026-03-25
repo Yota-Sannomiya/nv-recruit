@@ -786,25 +786,9 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [pw, setPw] = useState("");
   const [pwErr, setPwErr] = useState("");
-  const [pwMode, setPwMode] = useState("setup"); // "setup"|"login"
-  const [pw2, setPw2] = useState("");
   const [saving, setSaving] = useState(false);
   const saveRef = useRef(null);
-  const memoryPw = useRef("");
-
-  // Check if password exists
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await safeStorage.get(AUTH_PW_KEY);
-        if (r?.value) { setPwMode("login"); memoryPw.current = r.value; }
-        else setPwMode("setup");
-      } catch {
-        setPwMode("setup");
-      }
-      setLoading(false);
-    })();
-  }, []);
+  const FIXED_PW = "now1023!!";
 
   // Load candidates after auth
   useEffect(() => {
@@ -831,61 +815,29 @@ function App() {
 
   const upd = useCallback((nc) => { setCandidates(nc); save(nc); }, [save]);
 
-  // Password setup
-  const handlePwSetup = async () => {
-    if (pw.length < 4) { setPwErr("4文字以上で設定してください"); return; }
-    if (pw !== pw2) { setPwErr("パスワードが一致しません"); return; }
-    await safeStorage.set(AUTH_PW_KEY, pw);
-    memoryPw.current = pw;
-    setAuthed(true);
-  };
-
   // Password login
-  const handleLogin = async () => {
+  const handleLogin = () => {
     if (!pw) { setPwErr("パスワードを入力してください"); return; }
-    // Check stored password, or use memory fallback
-    const r = await safeStorage.get(AUTH_PW_KEY);
-    const storedPw = r?.value || memoryPw.current;
-    if (storedPw && storedPw === pw) setAuthed(true);
+    if (pw === FIXED_PW) { setAuthed(true); setLoading(true); }
     else setPwErr("パスワードが違います");
   };
 
   // Login screen
   if (!authed) {
-    if (loading) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.textSub, fontSize: 13, fontFamily: "'Noto Sans JP', sans-serif" }}>読み込み中…</div>;
     return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Noto Sans JP', 'SF Pro Display', sans-serif" }}>
       <div style={{ background: C.surface, borderRadius: 20, border: `1px solid ${C.border}`, padding: "44px 36px", width: 380, boxShadow: "0 32px 64px rgba(0,0,0,.35)", textAlign: "center" }}>
         <div style={{ width: 50, height: 50, borderRadius: 12, background: `linear-gradient(135deg, ${C.accent}, ${C.accentL})`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px", fontSize: 22 }}>⚡</div>
         <h1 style={{ color: C.text, fontSize: 18, fontWeight: 800, margin: "0 0 4px" }}>採用管理ツール</h1>
         <p style={{ color: C.textSub, fontSize: 11, margin: "0 0 24px" }}>NowVillage Recruitment Manager</p>
-
-        {pwMode === "setup" ? <>
-          <p style={{ color: C.textSub, fontSize: 12, marginBottom: 16 }}>初回アクセスです。パスワードを設定してください。</p>
-          <input type="password" placeholder="パスワード（4文字以上）" value={pw}
-            onChange={e => { setPw(e.target.value); setPwErr(""); }}
-            onKeyDown={e => e.key === "Enter" && document.getElementById("pw2input")?.focus()}
-            style={{ ...inp, marginBottom: 8, textAlign: "center", fontSize: 14 }} />
-          <input id="pw2input" type="password" placeholder="パスワード（確認）" value={pw2}
-            onChange={e => { setPw2(e.target.value); setPwErr(""); }}
-            onKeyDown={e => e.key === "Enter" && handlePwSetup()}
-            style={{ ...inp, marginBottom: 14, textAlign: "center", fontSize: 14 }} />
-          <button onClick={handlePwSetup} style={{
-            ...btnS, width: "100%", justifyContent: "center",
-            background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`,
-            color: "#fff", padding: 11, fontSize: 13,
-          }}>設定して開始</button>
-        </> : <>
-          <input type="password" placeholder="パスワード" value={pw}
-            onChange={e => { setPw(e.target.value); setPwErr(""); }}
-            onKeyDown={e => e.key === "Enter" && handleLogin()} autoFocus
-            style={{ ...inp, marginBottom: 14, textAlign: "center", fontSize: 14 }} />
-          <button onClick={handleLogin} style={{
-            ...btnS, width: "100%", justifyContent: "center",
-            background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`,
-            color: "#fff", padding: 11, fontSize: 13,
-          }}>ログイン</button>
-        </>}
-
+        <input type="password" placeholder="パスワード" value={pw}
+          onChange={e => { setPw(e.target.value); setPwErr(""); }}
+          onKeyDown={e => e.key === "Enter" && handleLogin()} autoFocus
+          style={{ ...inp, marginBottom: 14, textAlign: "center", fontSize: 14 }} />
+        <button onClick={handleLogin} style={{
+          ...btnS, width: "100%", justifyContent: "center",
+          background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`,
+          color: "#fff", padding: 11, fontSize: 13,
+        }}>ログイン</button>
         {pwErr && <p style={{ color: C.bad, fontSize: 11, marginTop: 10 }}>{pwErr}</p>}
       </div>
     </div>;
