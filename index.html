@@ -60,7 +60,8 @@ const CASUAL_RESULTS = ["応募意思あり", "応募意思なし", "検討中",
 
 const emptyCandidate = () => ({
   id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-  name: "", status: "書類選考中", position: "デジタルマーケティング",
+  name: "", status: "書類選考中", statusChangedDate: new Date().toISOString().slice(0, 10),
+  position: "デジタルマーケティング",
   source: "", appliedDate: new Date().toISOString().slice(0, 10),
   age: "", currentCompany: "", currentPosition: "", currentSalary: "", desiredSalary: "",
   documentUrl: "", memo: "",
@@ -104,6 +105,11 @@ function daysBetween(d1, d2) {
 function daysFromApply(c) {
   if (!c.appliedDate) return null;
   return daysBetween(c.appliedDate, new Date().toISOString().slice(0, 10));
+}
+function daysStalled(c) {
+  const base = c.statusChangedDate || c.appliedDate;
+  if (!base) return null;
+  return daysBetween(base, new Date().toISOString().slice(0, 10));
 }
 
 // ─── Colors ───
@@ -302,7 +308,7 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
 
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
       <IFl label="氏名" value={c.name} onChange={v => u("name", v)} />
-      <SFl label="ステータス" value={c.status} onChange={v => u("status", v)} options={STATUS_LIST} allowEmpty={false} />
+      <SFl label="ステータス" value={c.status} onChange={v => { onChange({ ...c, status: v, statusChangedDate: v !== c.status ? new Date().toISOString().slice(0, 10) : c.statusChangedDate }); }} options={STATUS_LIST} allowEmpty={false} />
       <SFl label="職種" value={c.position} onChange={v => u("position", v)} options={POSITIONS} allowEmpty={false} />
       <SFl label="経由" value={c.source} onChange={v => u("source", v)} options={SOURCES} />
       <CalendarPicker label="応募日" value={c.appliedDate} onChange={v => u("appliedDate", v)} />
@@ -436,10 +442,10 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatu
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead><tr style={{ borderBottom: `2px solid ${C.border}` }}>
           <th style={{ padding: "8px 6px", width: 32 }}><input type="checkbox" checked={allSel} onChange={toggleAll} style={{ accentColor: C.accent, cursor: "pointer" }} /></th>
-          {["氏名", "ステータス", "職種", "経由", "応募日", "経過", "一次面接", "最終面接", "書類"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 8px", color: C.textDim, fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>)}
+          {["氏名", "ステータス", "職種", "経由", "応募日", "滞留", "一次面接", "最終面接", "書類"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 8px", color: C.textDim, fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>)}
         </tr></thead>
         <tbody>{filtered.map(c => {
-          const days = daysFromApply(c);
+          const stalled = daysStalled(c);
           return <tr key={c.id} style={{ borderBottom: `1px solid ${C.border}`, background: selected.has(c.id) ? C.accent + "0a" : "transparent" }}
             onMouseEnter={e => { if (!selected.has(c.id)) e.currentTarget.style.background = C.surfaceAlt; }}
             onMouseLeave={e => { e.currentTarget.style.background = selected.has(c.id) ? C.accent + "0a" : "transparent"; }}>
@@ -449,7 +455,7 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatu
             <td style={{ padding: "8px 8px", color: C.textSub, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{c.position}</td>
             <td style={{ padding: "8px 8px", color: C.textSub, cursor: "pointer" }} onClick={() => onSelect(c)}>{c.source}</td>
             <td style={{ padding: "8px 8px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{fmtDate(c.appliedDate)}</td>
-            <td style={{ padding: "8px 8px", cursor: "pointer" }} onClick={() => onSelect(c)}><DaysChip days={days} /></td>
+            <td style={{ padding: "8px 8px", cursor: "pointer" }} onClick={() => onSelect(c)}><DaysChip days={stalled} /></td>
             <td style={{ padding: "8px 8px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{fmtDateTime(c.interview1Date, c.interview1Time)}</td>
             <td style={{ padding: "8px 8px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{fmtDateTime(c.interviewFinalDate, c.interviewFinalTime)}</td>
             <td style={{ padding: "8px 8px", cursor: "pointer" }} onClick={() => onSelect(c)}>{c.documentUrl && <a href={c.documentUrl} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ color: C.accentL, fontSize: 10 }}>書類</a>}</td>
@@ -481,7 +487,7 @@ function KanbanView({ candidates, onSelect, onStatusChange }) {
             <div style={{ fontSize: 12, fontWeight: 600, color: C.text, marginBottom: 4 }}>{c.name || "（未入力）"}</div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <Badge status={c.status} />
-              <DaysChip days={daysFromApply(c)} />
+              <DaysChip days={daysStalled(c)} />
             </div>
             <div style={{ display: "flex", gap: 6, marginTop: 5, fontSize: 10, color: C.textSub }}><span>{c.position?.slice(0, 6)}</span><span>{c.source}</span></div>
           </div>)}
@@ -597,10 +603,25 @@ function AnalyticsView({ candidates }) {
       [c.docScreeningReason, c.interview1RejectReason, c.interviewFinalRejectReason].forEach(r => { if (r) rejectReasons[r] = (rejectReasons[r] || 0) + 1; });
     });
 
-    const decList = candidates.filter(c => c.status === "辞退" || c.status === "内定：辞退" || c.status === "カジュアル：辞退").map(c => ({ name: c.name, pos: c.position, src: c.source, st: c.status, memo: c.memo, reason: c.withdrawReason || "", timing: c.status === "内定：辞退" ? "内定辞退" : c.status === "カジュアル：辞退" ? "カジュアル辞退" : c.interview1Result ? "選考中辞退" : "選考前辞退" }));
+    // 通過理由の集計
+    const passReasons = {};
+    candidates.forEach(c => {
+      [c.interview1PassReason, c.interviewFinalPassReason].forEach(r => { if (r) passReasons[r] = (passReasons[r] || 0) + 1; });
+    });
+
+    // 辞退理由の集計
+    const withdrawReasons = {};
+    const withdrawTimings = {};
+    const decList = candidates.filter(c => c.status === "辞退" || c.status === "内定：辞退" || c.status === "カジュアル：辞退").map(c => {
+      const timing = c.status === "内定：辞退" ? "内定辞退" : c.status === "カジュアル：辞退" ? "カジュアル辞退" : c.interview1Result ? "選考中辞退" : "選考前辞退";
+      const reason = c.withdrawReason || "";
+      if (reason) withdrawReasons[reason] = (withdrawReasons[reason] || 0) + 1;
+      withdrawTimings[timing] = (withdrawTimings[timing] || 0) + 1;
+      return { name: c.name, pos: c.position, src: c.source, st: c.status, memo: c.memo, reason, timing };
+    });
     const inProc = candidates.filter(c => !["辞退", "内定：辞退", "一次：不合格", "最終：不合格", "書類お見送り", "入社済み", "カジュアル：辞退", "カジュアル：見送り"].includes(c.status));
 
-    return { total, casual, docP, i1D, i1P, iFD, iFP, offer, accepted, entered, withdrew, offerDec, allDec: withdrew + offerDec, bySrc, byPos, decList, inProc, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons };
+    return { total, casual, docP, i1D, i1P, iFD, iFP, offer, accepted, entered, withdrew, offerDec, allDec: withdrew + offerDec, bySrc, byPos, decList, inProc, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons, passReasons, withdrawReasons, withdrawTimings };
   }, [candidates]);
 
   const dtabs = [{ key: "funnel", label: "ファネル", icon: "▼" }, { key: "speed", label: "選考スピード", icon: "⏱" }, { key: "channel", label: "チャネル別", icon: "◈" }, { key: "decline", label: "辞退分析", icon: "⚠" }, { key: "position", label: "職種別", icon: "◉" }, { key: "pipeline", label: "パイプライン", icon: "◎" }];
@@ -631,7 +652,23 @@ function AnalyticsView({ candidates }) {
       <FunnelBar label="承諾・入社" value={s.accepted + s.entered} maxVal={s.total} rate={s.offer > 0 ? Math.round(((s.accepted + s.entered) / s.offer) * 100) : 0} color={C.ok} />
       {Object.keys(s.rejectReasons).length > 0 && <div style={{ marginTop: 20, padding: "14px 16px", background: C.surfaceAlt, borderRadius: 10 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>お見送り理由の傾向</div>
-        {Object.entries(s.rejectReasons).sort((a, b) => b[1] - a[1]).map(([r, cnt]) => <div key={r} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 12, color: C.textSub }}><span>{r}</span><span style={{ fontWeight: 700 }}>{cnt}件</span></div>)}
+        {Object.entries(s.rejectReasons).sort((a, b) => b[1] - a[1]).map(([r, cnt]) => {
+          const mx = Math.max(...Object.values(s.rejectReasons));
+          return <div key={r} style={{ marginBottom: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2, fontSize: 12, color: C.textSub }}><span>{r}</span><span style={{ fontWeight: 700 }}>{cnt}件</span></div>
+            <div style={{ height: 6, background: C.bg, borderRadius: 3 }}><div style={{ height: "100%", width: `${(cnt / mx) * 100}%`, background: C.bad, borderRadius: 3, transition: "width .4s" }} /></div>
+          </div>;
+        })}
+      </div>}
+      {Object.keys(s.passReasons).length > 0 && <div style={{ marginTop: 14, padding: "14px 16px", background: C.surfaceAlt, borderRadius: 10 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>通過理由の傾向</div>
+        {Object.entries(s.passReasons).sort((a, b) => b[1] - a[1]).map(([r, cnt]) => {
+          const mx = Math.max(...Object.values(s.passReasons));
+          return <div key={r} style={{ marginBottom: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2, fontSize: 12, color: C.textSub }}><span>{r}</span><span style={{ fontWeight: 700 }}>{cnt}件</span></div>
+            <div style={{ height: 6, background: C.bg, borderRadius: 3 }}><div style={{ height: "100%", width: `${(cnt / mx) * 100}%`, background: C.ok, borderRadius: 3, transition: "width .4s" }} /></div>
+          </div>;
+        })}
       </div>}
     </div>}
 
@@ -675,6 +712,32 @@ function AnalyticsView({ candidates }) {
         <KPICard label="選考中辞退" value={s.withdrew} icon="↪" color={C.warn} />
       </div>
       {s.decList.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.textDim }}>辞退者なし</div> : <div>
+        {/* 辞退理由の傾向 */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+          {Object.keys(s.withdrawReasons).length > 0 && <div style={{ padding: "14px 16px", background: C.surfaceAlt, borderRadius: 10, border: `1px solid ${C.border}` }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 10 }}>辞退理由の傾向</div>
+            {Object.entries(s.withdrawReasons).sort((a, b) => b[1] - a[1]).map(([r, cnt]) => {
+              const mx = Math.max(...Object.values(s.withdrawReasons));
+              return <div key={r} style={{ marginBottom: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2, fontSize: 12, color: C.textSub }}><span>{r}</span><span style={{ fontWeight: 700 }}>{cnt}件</span></div>
+                <div style={{ height: 6, background: C.bg, borderRadius: 3 }}><div style={{ height: "100%", width: `${(cnt / mx) * 100}%`, background: C.bad, borderRadius: 3, transition: "width .4s" }} /></div>
+              </div>;
+            })}
+          </div>}
+          {Object.keys(s.withdrawTimings).length > 0 && <div style={{ padding: "14px 16px", background: C.surfaceAlt, borderRadius: 10, border: `1px solid ${C.border}` }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 10 }}>辞退タイミングの傾向</div>
+            {Object.entries(s.withdrawTimings).sort((a, b) => b[1] - a[1]).map(([t, cnt]) => {
+              const mx = Math.max(...Object.values(s.withdrawTimings));
+              const tc = t === "内定辞退" ? C.bad : t === "カジュアル辞退" ? "#a78bfa" : C.warn;
+              return <div key={t} style={{ marginBottom: 6 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2, fontSize: 12, color: C.textSub }}><span>{t}</span><span style={{ fontWeight: 700 }}>{cnt}件</span></div>
+                <div style={{ height: 6, background: C.bg, borderRadius: 3 }}><div style={{ height: "100%", width: `${(cnt / mx) * 100}%`, background: tc, borderRadius: 3, transition: "width .4s" }} /></div>
+              </div>;
+            })}
+          </div>}
+        </div>
+        {/* 辞退者一覧 */}
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>辞退者一覧（{s.decList.length}名）</div>
         <div style={{ display: "grid", gap: 6 }}>{s.decList.map((d, i) => <div key={i} style={{ display: "grid", gridTemplateColumns: "90px 1fr 90px 100px 100px", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
           <span style={{ color: C.text, fontWeight: 600 }}>{d.name}</span><span style={{ color: C.textSub }}>{d.pos?.slice(0, 8)}</span><span style={{ color: C.textSub }}>{d.src}</span>
           <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 8, background: d.timing === "内定辞退" ? C.badBg : C.warnBg, color: d.timing === "内定辞退" ? C.bad : C.warn, whiteSpace: "nowrap" }}>{d.timing}</span>
@@ -702,7 +765,7 @@ function AnalyticsView({ candidates }) {
       <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>パイプライン（{s.inProc.length}名）</h3>
       {s.inProc.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.textDim }}>選考中なし</div> :
         <div style={{ display: "grid", gap: 6 }}>{s.inProc.sort((a, b) => STATUS_LIST.indexOf(a.status) - STATUS_LIST.indexOf(b.status)).map(c => <div key={c.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 130px 90px 50px", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
-          <span style={{ color: C.text, fontWeight: 600 }}>{c.name}</span><span style={{ color: C.textSub }}>{c.position?.slice(0, 10)}</span><Badge status={c.status} /><span style={{ color: C.textSub }}>{c.source}</span><DaysChip days={daysFromApply(c)} />
+          <span style={{ color: C.text, fontWeight: 600 }}>{c.name}</span><span style={{ color: C.textSub }}>{c.position?.slice(0, 10)}</span><Badge status={c.status} /><span style={{ color: C.textSub }}>{c.source}</span><DaysChip days={daysStalled(c)} />
         </div>)}</div>}
     </div>}
   </div>;
@@ -765,9 +828,9 @@ function detectColumns(headers) {
 }
 
 function exportCSV(candidates) {
-  const h = ["氏名","ステータス","職種","経由","応募日","年齢","現職社名","現職役職","現年収","希望年収","書類URL","カジュアル面談日","カジュアル時間","カジュアル担当","カジュアル結果","カジュアルメモ","書類お見送り理由","面接官(一次)","一次日程","一次時間","一次合否","一次通過理由","一次お見送り理由","一次所感","適性検査送付","適性検査結果","適性検査メモ","面接官(最終)","最終日程","最終時間","最終合否","最終通過理由","最終お見送り理由","最終所感","オファー日","提示年収","承諾","辞退理由","入社予定日","備考"];
+  const h = ["氏名","ステータス","ステータス更新日","職種","経由","応募日","年齢","現職社名","現職役職","現年収","希望年収","書類URL","カジュアル面談日","カジュアル時間","カジュアル担当","カジュアル結果","カジュアルメモ","書類お見送り理由","面接官(一次)","一次日程","一次時間","一次合否","一次通過理由","一次お見送り理由","一次所感","適性検査送付","適性検査結果","適性検査メモ","面接官(最終)","最終日程","最終時間","最終合否","最終通過理由","最終お見送り理由","最終所感","オファー日","提示年収","承諾","辞退理由","入社予定日","備考"];
   const esc = (v) => { const s = String(v ?? ""); return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s; };
-  const rows = candidates.map(c => [c.name, c.status, c.position, c.source, c.appliedDate, c.age, c.currentCompany, c.currentPosition, c.currentSalary, c.desiredSalary, c.documentUrl, c.casualDate, c.casualTime, c.casualInterviewer, c.casualResult, c.casualNote, c.docScreeningReason, c.interviewer1, c.interview1Date, c.interview1Time, c.interview1Result, c.interview1PassReason, c.interview1RejectReason, c.interview1Note, c.aptitudeSent, c.aptitudeResult, c.aptitudeNote, c.interviewerFinal, c.interviewFinalDate, c.interviewFinalTime, c.interviewFinalResult, c.interviewFinalPassReason, c.interviewFinalRejectReason, c.interviewFinalNote, c.offerDate, c.offerSalary, c.accepted, c.withdrawReason, c.startDate, c.memo].map(esc).join(","));
+  const rows = candidates.map(c => [c.name, c.status, c.statusChangedDate, c.position, c.source, c.appliedDate, c.age, c.currentCompany, c.currentPosition, c.currentSalary, c.desiredSalary, c.documentUrl, c.casualDate, c.casualTime, c.casualInterviewer, c.casualResult, c.casualNote, c.docScreeningReason, c.interviewer1, c.interview1Date, c.interview1Time, c.interview1Result, c.interview1PassReason, c.interview1RejectReason, c.interview1Note, c.aptitudeSent, c.aptitudeResult, c.aptitudeNote, c.interviewerFinal, c.interviewFinalDate, c.interviewFinalTime, c.interviewFinalResult, c.interviewFinalPassReason, c.interviewFinalRejectReason, c.interviewFinalNote, c.offerDate, c.offerSalary, c.accepted, c.withdrawReason, c.startDate, c.memo].map(esc).join(","));
   return "\uFEFF" + h.join(",") + "\n" + rows.join("\n");
 }
 
@@ -889,9 +952,9 @@ function App() {
   const openEdit = (c) => { setEditC({ ...c }); setModal({ mode: "edit" }); };
   const handleSave = async () => { if (!editC) return; if (modal.mode === "new") setCandidates(p => [editC, ...p]); else setCandidates(p => p.map(c => c.id === editC.id ? editC : c)); setModal(null); setEditC(null); await saveSingle(editC); };
   const handleDel = async () => { if (!editC || !confirm("削除しますか？")) return; const id = editC.id; setCandidates(p => p.filter(c => c.id !== id)); setModal(null); setEditC(null); await deleteSingle(id); };
-  const handleSC = async (id, st) => { const upd = candidates.map(c => c.id === id ? { ...c, status: st } : c); setCandidates(upd); const t = upd.find(c => c.id === id); if (t) await saveSingle(t); };
+  const handleSC = async (id, st) => { const today = new Date().toISOString().slice(0, 10); const upd = candidates.map(c => c.id === id ? { ...c, status: st, statusChangedDate: today } : c); setCandidates(upd); const t = upd.find(c => c.id === id); if (t) await saveSingle(t); };
   const handleImport = async (data, mode) => { if (mode === "replace") setCandidates(data); else setCandidates(p => [...data, ...p]); await bulkSave(data, mode); };
-  const handleBulkStatus = async (ids, status) => { const upd = candidates.map(c => ids.includes(c.id) ? { ...c, status } : c); setCandidates(upd); await bulkSave(upd.filter(c => ids.includes(c.id)), "append"); };
+  const handleBulkStatus = async (ids, status) => { const today = new Date().toISOString().slice(0, 10); const upd = candidates.map(c => ids.includes(c.id) ? { ...c, status, statusChangedDate: today } : c); setCandidates(upd); await bulkSave(upd.filter(c => ids.includes(c.id)), "append"); };
   const handleBulkDelete = async (ids) => { setCandidates(p => p.filter(c => !ids.includes(c.id))); for (const id of ids) await deleteSingle(id); };
   const handleExport = () => { const csv = exportCSV(candidates); const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `nv_recruit_${new Date().toISOString().slice(0, 10)}.csv`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); };
 
