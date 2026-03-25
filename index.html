@@ -806,18 +806,26 @@ function AnalyticsView({ candidates }) {
 }
 
 // ─── GAS API Client ───
-const API_URL_KEY = "nv-recruit-api-url";
-const AUTH_PW_KEY = "nv-recruit-pw";
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyBnmVegbUAJDRmmk8H4CXNi5L1vmZL8DjijFfRVlJ1Mmmkmh9xp9vWRU2YWOzij3SG/exec";
 
-// ─── Storage ───
-const safeStorage = {
-  async get(key) {
-    try { const v = localStorage.getItem(key); return v !== null ? { value: v } : null; } catch {} return null;
-  },
-  async set(key, value) {
-    try { localStorage.setItem(key, value); return { key, value }; } catch {} return null;
-  },
-};
+async function gasGet(pw, action = "list", params = {}) {
+  const url = new URL(GAS_URL);
+  url.searchParams.set("pw", pw);
+  url.searchParams.set("action", action);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url.toString(), { redirect: "follow" });
+  return res.json();
+}
+
+async function gasPost(pw, body) {
+  const res = await fetch(GAS_URL, {
+    method: "POST",
+    redirect: "follow",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ pw, ...body }),
+  });
+  return res.json();
+}
 
 function App() {
   const [authed, setAuthed] = useState(false);
@@ -826,43 +834,54 @@ function App() {
   const [modal, setModal] = useState(null);
   const [editC, setEditC] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [pw, setPw] = useState("");
   const [pwErr, setPwErr] = useState("");
   const [saving, setSaving] = useState(false);
-  const saveRef = useRef(null);
-  const FIXED_PW = "now1023!!";
 
-  // Load candidates after auth
+  // Load candidates from GAS after auth
   useEffect(() => {
     if (!authed) return;
     setLoading(true);
     (async () => {
       try {
-        const r = await safeStorage.get(STORAGE_KEY);
-        if (r?.value) setCandidates(JSON.parse(r.value));
-      } catch {}
+        const r = await gasGet(pw, "list");
+        if (r.ok) setCandidates(r.data || []);
+      } catch (e) { console.warn("Load error:", e); }
       setLoading(false);
     })();
   }, [authed]);
 
-  // Save to storage (debounced)
-  const save = useCallback((data) => {
-    if (saveRef.current) clearTimeout(saveRef.current);
-    saveRef.current = setTimeout(async () => {
-      setSaving(true);
-      await safeStorage.set(STORAGE_KEY, JSON.stringify(data));
-      setSaving(false);
-    }, 400);
-  }, []);
+  // Save single candidate to GAS
+  const saveSingle = useCallback(async (candidate) => {
+    setSaving(true);
+    try { await gasPost(pw, { action: "save", data: candidate }); } catch (e) { console.warn("Save error:", e); }
+    setSaving(false);
+  }, [pw]);
 
-  const upd = useCallback((nc) => { setCandidates(nc); save(nc); }, [save]);
+  // Delete from GAS
+  const deleteSingle = useCallback(async (id) => {
+    try { await gasPost(pw, { action: "delete", id }); } catch (e) { console.warn("Delete error:", e); }
+  }, [pw]);
 
-  // Password login
-  const handleLogin = () => {
+  // Bulk save to GAS
+  const bulkSave = useCallback(async (data, mode) => {
+    setSaving(true);
+    try { await gasPost(pw, { action: "bulk_save", data, mode }); } catch (e) { console.warn("Bulk save error:", e); }
+    setSaving(false);
+  }, [pw]);
+
+  const upd = useCallback((nc) => { setCandidates(nc); }, []);
+
+  // Password login via GAS auth
+  const handleLogin = async () => {
     if (!pw) { setPwErr("パスワードを入力してください"); return; }
-    if (pw === FIXED_PW) { setAuthed(true); setLoading(true); }
-    else setPwErr("パスワードが違います");
+    setPwErr("");
+    try {
+      const r = await gasGet(pw, "auth");
+      if (r.ok) { setAuthed(true); }
+      else setPwErr(r.message || "パスワードが違います");
+    } catch (e) { setPwErr("接続エラー: " + e.message); }
   };
 
   // Login screen
@@ -890,30 +909,43 @@ function App() {
   const openNew = () => { const c = emptyCandidate(); setEditC(c); setModal({ mode: "new" }); };
   const openEdit = (c) => { setEditC({ ...c }); setModal({ mode: "edit" }); };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!editC) return;
-    if (modal.mode === "new") upd([editC, ...candidates]);
-    else upd(candidates.map(c => c.id === editC.id ? editC : c));
+    if (modal.mode === "new") setCandidates(prev => [editC, ...prev]);
+    else setCandidates(prev => prev.map(c => c.id === editC.id ? editC : c));
     setModal(null); setEditC(null);
+    await saveSingle(editC);
   };
 
-  const handleDel = () => {
+  const handleDel = async () => {
     if (!editC || !confirm("削除しますか？")) return;
-    upd(candidates.filter(c => c.id !== editC.id));
+    const id = editC.id;
+    setCandidates(prev => prev.filter(c => c.id !== id));
     setModal(null); setEditC(null);
+    await deleteSingle(id);
   };
 
-  const handleSC = (id, st) => upd(candidates.map(c => c.id === id ? { ...c, status: st } : c));
+  const handleSC = async (id, st) => {
+    const updated = candidates.map(c => c.id === id ? { ...c, status: st } : c);
+    setCandidates(updated);
+    const target = updated.find(c => c.id === id);
+    if (target) await saveSingle(target);
+  };
 
-  const handleImport = (data, mode) => {
-    if (mode === "replace") upd(data);
-    else upd([...data, ...candidates]);
+  const handleImport = async (data, mode) => {
+    if (mode === "replace") setCandidates(data);
+    else setCandidates(prev => [...data, ...prev]);
+    await bulkSave(data, mode);
   };
-  const handleBulkStatus = (ids, status) => {
-    upd(candidates.map(c => ids.includes(c.id) ? { ...c, status } : c));
+  const handleBulkStatus = async (ids, status) => {
+    const updated = candidates.map(c => ids.includes(c.id) ? { ...c, status } : c);
+    setCandidates(updated);
+    const changed = updated.filter(c => ids.includes(c.id));
+    await bulkSave(changed, "append");
   };
-  const handleBulkDelete = (ids) => {
-    upd(candidates.filter(c => !ids.includes(c.id)));
+  const handleBulkDelete = async (ids) => {
+    setCandidates(prev => prev.filter(c => !ids.includes(c.id)));
+    for (const id of ids) { await deleteSingle(id); }
   };
   const handleExport = () => {
     const csv = exportCSV(candidates);
