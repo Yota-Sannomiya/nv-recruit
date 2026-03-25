@@ -6,11 +6,11 @@
 <title>NV採用管理ツール</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Noto Sans JP', -apple-system, sans-serif; background: #08090c; }
-  ::-webkit-scrollbar { width: 6px; height: 6px; }
-  ::-webkit-scrollbar-track { background: #111318; }
-  ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Noto Sans JP', -apple-system, sans-serif; background: #08090c; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #111318; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 </style>
 </head>
 <body>
@@ -25,21 +25,23 @@ const STORAGE_KEY = "nv-recruit-data";
 const GAS_URL = "https://script.google.com/macros/s/AKfycbyBnmVegbUAJDRmmk8H4CXNi5L1vmZL8DjijFfRVlJ1Mmmkmh9xp9vWRU2YWOzij3SG/exec";
 
 const STATUS_LIST = [
+  "カジュアル：調整中", "カジュアル：日程確定", "カジュアル：完了", "カジュアル：辞退", "カジュアル：見送り",
   "書類選考中", "書類お見送り",
   "一次：調整中", "一次：日程確定", "一次：合格", "一次：不合格",
-  "最終：調整中", "最終：日程確定", "最終：合格", "最終：不合格",
   "適性検査中",
+  "最終：調整中", "最終：日程確定", "最終：合格", "最終：不合格",
   "内定：オファー面談", "内定：承諾", "内定：辞退",
   "辞退", "入社済み",
 ];
 
 const KANBAN_COLUMNS = [
+  { key: "カジュアル面談", statuses: ["カジュアル：調整中", "カジュアル：日程確定", "カジュアル：完了", "カジュアル：辞退", "カジュアル：見送り"], color: "#a78bfa" },
   { key: "書類選考", statuses: ["書類選考中", "書類お見送り"], color: "#3b82f6" },
   { key: "一次面接", statuses: ["一次：調整中", "一次：日程確定"], color: "#f59e0b" },
   { key: "一次結果", statuses: ["一次：合格", "一次：不合格"], color: "#8b5cf6" },
+  { key: "適性検査", statuses: ["適性検査中"], color: "#14b8a6" },
   { key: "最終面接", statuses: ["最終：調整中", "最終：日程確定"], color: "#06b6d4" },
   { key: "最終結果", statuses: ["最終：合格", "最終：不合格"], color: "#ec4899" },
-  { key: "適性検査", statuses: ["適性検査中"], color: "#14b8a6" },
   { key: "内定", statuses: ["内定：オファー面談", "内定：承諾", "内定：辞退"], color: "#22c55e" },
   { key: "辞退/入社", statuses: ["辞退", "入社済み"], color: "#6366f1" },
 ];
@@ -54,29 +56,33 @@ const SOURCES = [
 const INTERVIEWERS = ["今村さん", "田開さん", "髙山さん", "三宮さん", "市嶋さん", "その他"];
 const REJECT_REASONS = ["スキル不足", "経験不足", "カルチャー不一致", "コミュニケーション", "希望条件不一致", "年齢", "学歴", "その他"];
 const WITHDRAW_REASONS = ["他社決定", "現職残留", "条件不一致", "ギャップ", "選考スピード", "志望度低下", "家庭事情", "不明", "その他"];
+const CASUAL_RESULTS = ["応募意思あり", "応募意思なし", "検討中", "見送り"];
 
 const emptyCandidate = () => ({
   id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
   name: "", status: "書類選考中", position: "デジタルマーケティング",
   source: "", appliedDate: new Date().toISOString().slice(0, 10),
-  // 候補者詳細
   age: "", currentCompany: "", currentPosition: "", currentSalary: "", desiredSalary: "",
   documentUrl: "", memo: "",
+  // カジュアル面談
+  casualDate: "", casualTime: "", casualInterviewer: "", casualResult: "", casualNote: "",
   // 書類選考
   docScreeningReason: "", docScreeningNote: "",
   // 一次面接
   interviewer1: "", interview1Date: "", interview1Time: "",
   interview1Result: "", interview1PassReason: "", interview1RejectReason: "", interview1Note: "",
+  // 適性検査
+  aptitudeSent: false, aptitudeResult: "", aptitudeNote: "",
   // 最終面接
   interviewerFinal: "", interviewFinalDate: "", interviewFinalTime: "",
   interviewFinalResult: "", interviewFinalPassReason: "", interviewFinalRejectReason: "", interviewFinalNote: "",
   // 内定
-  aptitudeSent: false, offerDate: "", offerSalary: "",
+  offerDate: "", offerSalary: "",
   accepted: "", withdrawReason: "",
   startDate: "",
 });
 
-// ─── Utility: Date formatting ───
+// ─── Utility ───
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 function fmtDate(dateStr) {
   if (!dateStr) return "";
@@ -100,7 +106,7 @@ function daysFromApply(c) {
   return daysBetween(c.appliedDate, new Date().toISOString().slice(0, 10));
 }
 
-// ─── Colors & Styles ───
+// ─── Colors ───
 const C = {
   bg: "#08090c", surface: "#111318", surfaceAlt: "#161921", card: "#1a1d27",
   cardHover: "#1f2330", border: "#252836",
@@ -112,12 +118,15 @@ const C = {
 
 const statusColor = (s) => {
   const m = {
+    "カジュアル：調整中": ["#a78bfa", "#a78bfa14"], "カジュアル：日程確定": ["#8b5cf6", "#8b5cf614"],
+    "カジュアル：完了": ["#7c3aed", "#7c3aed14"], "カジュアル：辞退": ["#ef4444", "#ef444414"],
+    "カジュアル：見送り": ["#ef4444", "#ef444414"],
     "書類選考中": ["#3b82f6", "#3b82f614"], "書類お見送り": ["#ef4444", "#ef444414"],
     "一次：調整中": ["#f59e0b", "#f59e0b14"], "一次：日程確定": ["#6366f1", "#6366f114"],
     "一次：合格": ["#22c55e", "#22c55e14"], "一次：不合格": ["#ef4444", "#ef444414"],
+    "適性検査中": ["#06b6d4", "#06b6d414"],
     "最終：調整中": ["#f59e0b", "#f59e0b14"], "最終：日程確定": ["#8b5cf6", "#8b5cf614"],
     "最終：合格": ["#22c55e", "#22c55e14"], "最終：不合格": ["#ef4444", "#ef444414"],
-    "適性検査中": ["#06b6d4", "#06b6d414"],
     "内定：オファー面談": ["#8b5cf6", "#8b5cf614"], "内定：承諾": ["#22c55e", "#22c55e14"],
     "内定：辞退": ["#ef4444", "#ef444414"], "辞退": ["#ef4444", "#ef444414"],
     "入社済み": ["#10b981", "#10b98114"],
@@ -135,11 +144,13 @@ function Badge({ status }) {
     <span style={{ width: 5, height: 5, borderRadius: "50%", background: c }} />{status}
   </span>;
 }
+
 function DaysChip({ days }) {
   if (days === null || days === undefined) return null;
   const color = days <= 14 ? C.ok : days <= 30 ? C.warn : C.bad;
   return <span style={{ fontSize: 10, fontWeight: 600, padding: "1px 6px", borderRadius: 8, background: color + "18", color }}>{days}日</span>;
 }
+
 function Modal({ open, onClose, title, children, width = 640 }) {
   if (!open) return null;
   return <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,.65)", backdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }} onClick={onClose}>
@@ -152,16 +163,103 @@ function Modal({ open, onClose, title, children, width = 640 }) {
     </div>
   </div>;
 }
+
 function Fl({ label, children }) { return <div style={{ marginBottom: 12 }}><label style={{ display: "block", fontSize: 10, color: C.textSub, marginBottom: 3, fontWeight: 700, textTransform: "uppercase", letterSpacing: .5 }}>{label}</label>{children}</div>; }
 function IFl({ label, value, onChange, type = "text", placeholder = "" }) { return <Fl label={label}><input type={type} value={value || ""} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={inp} /></Fl>; }
 function SFl({ label, value, onChange, options, allowEmpty = true }) { return <Fl label={label}><select value={value || ""} onChange={e => onChange(e.target.value)} style={{ ...inp, appearance: "auto" }}>{allowEmpty && <option value="">--</option>}{options.map(o => <option key={o}>{o}</option>)}</select></Fl>; }
 function CFl({ label, checked, onChange }) { return <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", fontSize: 12, color: C.text, marginBottom: 6 }}><input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} style={{ accentColor: C.accent, width: 15, height: 15 }} />{label}</label>; }
 function TFl({ label, value, onChange, rows = 2 }) { return <Fl label={label}><textarea value={value || ""} onChange={e => onChange(e.target.value)} rows={rows} style={{ ...inp, resize: "vertical" }} /></Fl>; }
+
 function Section({ title, color = C.accentL, children }) {
   return <div style={{ borderTop: `1px solid ${C.border}`, margin: "16px 0", paddingTop: 16 }}>
     <h4 style={{ color, fontSize: 12, margin: "0 0 10px", fontWeight: 700 }}>{title}</h4>
     {children}
   </div>;
+}
+
+// ─── Custom Calendar Picker ───
+function CalendarPicker({ value, onChange, label }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const today = new Date();
+  const selDate = value ? new Date(value + "T00:00:00") : null;
+  const [viewYear, setViewYear] = useState(selDate ? selDate.getFullYear() : today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(selDate ? selDate.getMonth() : today.getMonth());
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  useEffect(() => {
+    if (open && value) {
+      const d = new Date(value + "T00:00:00");
+      if (!isNaN(d)) { setViewYear(d.getFullYear()); setViewMonth(d.getMonth()); }
+    }
+  }, [open]);
+
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const prevM = () => { if (viewMonth === 0) { setViewMonth(11); setViewYear(viewYear - 1); } else setViewMonth(viewMonth - 1); };
+  const nextM = () => { if (viewMonth === 11) { setViewMonth(0); setViewYear(viewYear + 1); } else setViewMonth(viewMonth + 1); };
+
+  const pick = (day) => {
+    const m = String(viewMonth + 1).padStart(2, "0");
+    const d = String(day).padStart(2, "0");
+    onChange(`${viewYear}-${m}-${d}`);
+    setOpen(false);
+  };
+
+  const isToday = (day) => day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
+  const isSel = (day) => selDate && day === selDate.getDate() && viewMonth === selDate.getMonth() && viewYear === selDate.getFullYear();
+  const isSun = (idx) => idx % 7 === 0;
+  const isSat = (idx) => idx % 7 === 6;
+
+  return <Fl label={label}>
+    <div ref={ref} style={{ position: "relative" }}>
+      <div onClick={() => setOpen(!open)} style={{ ...inp, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", minHeight: 37 }}>
+        <span style={{ color: value ? C.text : C.textDim }}>{value ? fmtDate(value) : "日付を選択"}</span>
+        <span style={{ fontSize: 14, color: C.textDim }}>📅</span>
+      </div>
+      {value && <button onClick={(e) => { e.stopPropagation(); onChange(""); }} style={{ position: "absolute", right: 32, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: C.textDim, cursor: "pointer", fontSize: 12, padding: 2 }}>✕</button>}
+
+      {open && <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 1100, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 12, boxShadow: "0 16px 48px rgba(0,0,0,.5)", width: 280 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <button onClick={prevM} style={{ ...btnS, background: "transparent", color: C.textSub, padding: "4px 8px", fontSize: 14 }}>◀</button>
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{viewYear}年{viewMonth + 1}月</span>
+          <button onClick={nextM} style={{ ...btnS, background: "transparent", color: C.textSub, padding: "4px 8px", fontSize: 14 }}>▶</button>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1, marginBottom: 4 }}>
+          {["日", "月", "火", "水", "木", "金", "土"].map((w, i) => <div key={w} style={{ textAlign: "center", fontSize: 10, fontWeight: 700, color: i === 0 ? "#ef4444" : i === 6 ? "#3b82f6" : C.textDim, padding: "4px 0" }}>{w}</div>)}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 1 }}>
+          {cells.map((day, idx) => day === null ?
+            <div key={`e${idx}`} /> :
+            <button key={idx} onClick={() => pick(day)} style={{
+              ...btnS, padding: "6px 0", justifyContent: "center", fontSize: 12,
+              background: isSel(day) ? C.accent : isToday(day) ? C.accent + "20" : "transparent",
+              color: isSel(day) ? "#fff" : isSun(idx) ? "#ef4444" : isSat(idx) ? "#3b82f6" : C.text,
+              borderRadius: 8, border: isToday(day) && !isSel(day) ? `1px solid ${C.accent}40` : "1px solid transparent",
+              fontWeight: isToday(day) || isSel(day) ? 700 : 400,
+              width: "100%",
+            }}
+            onMouseEnter={e => { if (!isSel(day)) e.currentTarget.style.background = C.cardHover; }}
+            onMouseLeave={e => { if (!isSel(day)) e.currentTarget.style.background = isToday(day) ? C.accent + "20" : "transparent"; }}
+            >{day}</button>
+          )}
+        </div>
+        <div style={{ display: "flex", justifyContent: "center", marginTop: 8, gap: 6 }}>
+          <button onClick={() => { const t = new Date(); setViewYear(t.getFullYear()); setViewMonth(t.getMonth()); pick(t.getDate()); }} style={{ ...btnS, background: C.accent + "14", color: C.accentL, fontSize: 10, padding: "4px 10px" }}>今日</button>
+        </div>
+      </div>}
+    </div>
+  </Fl>;
 }
 
 function KPICard({ label, value, sub, color = C.accent, icon }) {
@@ -172,6 +270,7 @@ function KPICard({ label, value, sub, color = C.accent, icon }) {
     {sub && <div style={{ fontSize: 10, color: C.textDim, marginTop: 3 }}>{sub}</div>}
   </div>;
 }
+
 function FunnelBar({ label, value, maxVal, rate, color, sub }) {
   const pct = maxVal > 0 ? (value / maxVal) * 100 : 0;
   return <div style={{ marginBottom: 14 }}>
@@ -189,25 +288,24 @@ function FunnelBar({ label, value, maxVal, rate, color, sub }) {
   </div>;
 }
 
-// ─── Candidate Form (v2) ───
+// ─── Candidate Form ───
 function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
   const u = (f, v) => onChange({ ...c, [f]: v });
   const elapsed = daysFromApply(c);
+
   return <div>
-    {/* Header info */}
     {!isNew && elapsed !== null && <div style={{ display: "flex", gap: 10, marginBottom: 14, fontSize: 11, color: C.textSub }}>
       <span>応募から <DaysChip days={elapsed} /> 経過</span>
       {c.interview1Date && <span>応募→一次: {daysBetween(c.appliedDate, c.interview1Date)}日</span>}
       {c.interviewFinalDate && <span>応募→最終: {daysBetween(c.appliedDate, c.interviewFinalDate)}日</span>}
     </div>}
 
-    {/* Basic */}
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
       <IFl label="氏名" value={c.name} onChange={v => u("name", v)} />
       <SFl label="ステータス" value={c.status} onChange={v => u("status", v)} options={STATUS_LIST} allowEmpty={false} />
       <SFl label="職種" value={c.position} onChange={v => u("position", v)} options={POSITIONS} allowEmpty={false} />
       <SFl label="経由" value={c.source} onChange={v => u("source", v)} options={SOURCES} />
-      <IFl label="応募日" value={c.appliedDate} onChange={v => u("appliedDate", v)} type="date" />
+      <CalendarPicker label="応募日" value={c.appliedDate} onChange={v => u("appliedDate", v)} />
       <IFl label="年齢" value={c.age} onChange={v => u("age", v)} placeholder="28" />
       <IFl label="現職（社名）" value={c.currentCompany} onChange={v => u("currentCompany", v)} />
       <IFl label="現職（役職・職種）" value={c.currentPosition} onChange={v => u("currentPosition", v)} />
@@ -215,6 +313,17 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
       <IFl label="希望年収（万円）" value={c.desiredSalary} onChange={v => u("desiredSalary", v)} placeholder="600" />
     </div>
     <IFl label="書類URL（Google Drive等）" value={c.documentUrl} onChange={v => u("documentUrl", v)} placeholder="https://drive.google.com/..." />
+
+    {/* カジュアル面談 */}
+    <Section title="カジュアル面談" color="#a78bfa">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+        <SFl label="面談担当" value={c.casualInterviewer} onChange={v => u("casualInterviewer", v)} options={INTERVIEWERS} />
+        <CalendarPicker label="面談日" value={c.casualDate} onChange={v => u("casualDate", v)} />
+        <IFl label="時間" value={c.casualTime} onChange={v => u("casualTime", v)} type="time" />
+        <SFl label="結果" value={c.casualResult} onChange={v => u("casualResult", v)} options={CASUAL_RESULTS} />
+      </div>
+      <TFl label="面談メモ・所感" value={c.casualNote} onChange={v => u("casualNote", v)} />
+    </Section>
 
     {/* 書類選考 */}
     <Section title="書類選考">
@@ -228,7 +337,7 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
     <Section title="一次面接">
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
         <SFl label="面接官" value={c.interviewer1} onChange={v => u("interviewer1", v)} options={INTERVIEWERS} />
-        <IFl label="日程" value={c.interview1Date} onChange={v => u("interview1Date", v)} type="date" />
+        <CalendarPicker label="日程" value={c.interview1Date} onChange={v => u("interview1Date", v)} />
         <IFl label="時間" value={c.interview1Time} onChange={v => u("interview1Time", v)} type="time" />
         <SFl label="合否" value={c.interview1Result} onChange={v => u("interview1Result", v)} options={["合格", "不合格", "保留"]} />
         <IFl label="通過理由" value={c.interview1PassReason} onChange={v => u("interview1PassReason", v)} placeholder="論理的思考力が高い、等" />
@@ -237,11 +346,20 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
       <TFl label="所感・詳細メモ" value={c.interview1Note} onChange={v => u("interview1Note", v)} />
     </Section>
 
+    {/* 適性検査 */}
+    <Section title="適性検査" color="#06b6d4">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+        <CFl label="適性検査送付済" checked={c.aptitudeSent} onChange={v => u("aptitudeSent", v)} />
+        <IFl label="検査結果・スコア" value={c.aptitudeResult} onChange={v => u("aptitudeResult", v)} placeholder="結果概要" />
+      </div>
+      <TFl label="適性検査メモ" value={c.aptitudeNote} onChange={v => u("aptitudeNote", v)} />
+    </Section>
+
     {/* 最終面接 */}
     <Section title="最終面接">
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
         <SFl label="面接官" value={c.interviewerFinal} onChange={v => u("interviewerFinal", v)} options={INTERVIEWERS} />
-        <IFl label="日程" value={c.interviewFinalDate} onChange={v => u("interviewFinalDate", v)} type="date" />
+        <CalendarPicker label="日程" value={c.interviewFinalDate} onChange={v => u("interviewFinalDate", v)} />
         <IFl label="時間" value={c.interviewFinalTime} onChange={v => u("interviewFinalTime", v)} type="time" />
         <SFl label="合否" value={c.interviewFinalResult} onChange={v => u("interviewFinalResult", v)} options={["合格", "不合格", "保留"]} />
         <IFl label="通過理由" value={c.interviewFinalPassReason} onChange={v => u("interviewFinalPassReason", v)} />
@@ -253,12 +371,11 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
     {/* 内定・入社 */}
     <Section title="内定・入社" color="#22c55e">
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
-        <CFl label="適性検査送付済" checked={c.aptitudeSent} onChange={v => u("aptitudeSent", v)} />
-        <IFl label="オファー面談日" value={c.offerDate} onChange={v => u("offerDate", v)} type="date" />
+        <CalendarPicker label="オファー面談日" value={c.offerDate} onChange={v => u("offerDate", v)} />
         <IFl label="提示年収（万円）" value={c.offerSalary} onChange={v => u("offerSalary", v)} placeholder="550" />
         <SFl label="承諾状況" value={c.accepted} onChange={v => u("accepted", v)} options={["承諾", "辞退", "検討中"]} />
         <SFl label="辞退理由" value={c.withdrawReason} onChange={v => u("withdrawReason", v)} options={WITHDRAW_REASONS} />
-        <IFl label="入社予定日" value={c.startDate} onChange={v => u("startDate", v)} type="date" />
+        <CalendarPicker label="入社予定日" value={c.startDate} onChange={v => u("startDate", v)} />
       </div>
     </Section>
 
@@ -271,11 +388,12 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
   </div>;
 }
 
-// ─── List View (v2) ───
+// ─── List View ───
 function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatus, onBulkDelete }) {
   const [q, setQ] = useState(""); const [fSt, setFSt] = useState(""); const [fPos, setFPos] = useState(""); const [fSrc, setFSrc] = useState("");
   const [selected, setSelected] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
+
   const filtered = useMemo(() => candidates.filter(c => {
     if (q && !c.name.includes(q) && !c.source.includes(q) && !c.memo?.includes(q) && !c.currentCompany?.includes(q)) return false;
     return (!fSt || c.status === fSt) && (!fPos || c.position === fPos) && (!fSrc || c.source === fSrc);
@@ -288,7 +406,7 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatu
   return <div>
     <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
       <input placeholder="検索（氏名・経由・現職・備考）" value={q} onChange={e => setQ(e.target.value)} style={{ ...inp, width: 220 }} />
-      <select value={fSt} onChange={e => setFSt(e.target.value)} style={{ ...inp, width: 150, appearance: "auto" }}><option value="">全ステータス</option>{STATUS_LIST.map(s => <option key={s}>{s}</option>)}</select>
+      <select value={fSt} onChange={e => setFSt(e.target.value)} style={{ ...inp, width: 160, appearance: "auto" }}><option value="">全ステータス</option>{STATUS_LIST.map(s => <option key={s}>{s}</option>)}</select>
       <select value={fPos} onChange={e => setFPos(e.target.value)} style={{ ...inp, width: 150, appearance: "auto" }}><option value="">全職種</option>{POSITIONS.map(s => <option key={s}>{s}</option>)}</select>
       <select value={fSrc} onChange={e => setFSrc(e.target.value)} style={{ ...inp, width: 130, appearance: "auto" }}><option value="">全経由</option>{SOURCES.map(s => <option key={s}>{s}</option>)}</select>
       <div style={{ flex: 1 }} />
@@ -299,7 +417,7 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatu
 
     {selected.size > 0 && <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", marginBottom: 10, background: C.accent + "14", borderRadius: 10, border: `1px solid ${C.accent}30` }}>
       <span style={{ fontSize: 12, fontWeight: 700, color: C.accentL }}>{selected.size}名 選択中</span>
-      <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} style={{ ...inp, width: 160, appearance: "auto", fontSize: 11 }}>
+      <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} style={{ ...inp, width: 180, appearance: "auto", fontSize: 11 }}>
         <option value="">ステータス一括変更</option>{STATUS_LIST.map(s => <option key={s}>{s}</option>)}
       </select>
       <button onClick={() => { if (bulkStatus) { onBulkStatus([...selected], bulkStatus); setSelected(new Set()); setBulkStatus(""); } }} style={{ ...btnS, background: bulkStatus ? C.accent : C.surfaceAlt, color: bulkStatus ? "#fff" : C.textDim, fontSize: 11, padding: "6px 14px" }}>適用</button>
@@ -309,6 +427,7 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatu
     </div>}
 
     <div style={{ fontSize: 11, color: C.textSub, marginBottom: 8 }}>{filtered.length}件 / {candidates.length}件</div>
+
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead><tr style={{ borderBottom: `2px solid ${C.border}` }}>
@@ -374,21 +493,31 @@ function InterviewView({ candidates, onSelect }) {
   const upcoming = useMemo(() => {
     const r = [];
     candidates.forEach(c => {
+      if (c.casualDate && c.casualDate >= today && !c.casualResult) r.push({ ...c, type: "カジュアル", date: c.casualDate, time: c.casualTime, who: c.casualInterviewer });
       if (c.interview1Date && c.interview1Date >= today && !c.interview1Result) r.push({ ...c, type: "一次", date: c.interview1Date, time: c.interview1Time, who: c.interviewer1 });
       if (c.interviewFinalDate && c.interviewFinalDate >= today && !c.interviewFinalResult) r.push({ ...c, type: "最終", date: c.interviewFinalDate, time: c.interviewFinalTime, who: c.interviewerFinal });
     });
     return r.sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
   }, [candidates, today]);
+
   const past = useMemo(() => {
     const r = [];
     candidates.forEach(c => {
+      if (c.casualDate && c.casualResult) r.push({ ...c, type: "カジュアル", date: c.casualDate, result: c.casualResult, note: c.casualNote, passReason: "", rejectReason: "" });
       if (c.interview1Date && c.interview1Result) r.push({ ...c, type: "一次", date: c.interview1Date, result: c.interview1Result, note: c.interview1Note, passReason: c.interview1PassReason, rejectReason: c.interview1RejectReason });
       if (c.interviewFinalDate && c.interviewFinalResult) r.push({ ...c, type: "最終", date: c.interviewFinalDate, result: c.interviewFinalResult, note: c.interviewFinalNote, passReason: c.interviewFinalPassReason, rejectReason: c.interviewFinalRejectReason });
     });
     return r.sort((a, b) => b.date.localeCompare(a.date));
   }, [candidates]);
+
+  const resultColor = (r) => {
+    if (r === "合格" || r === "応募意思あり") return { bg: C.okBg, color: C.ok };
+    if (r === "不合格" || r === "応募意思なし" || r === "見送り") return { bg: C.badBg, color: C.bad };
+    return { bg: C.warnBg, color: C.warn };
+  };
+
   return <div>
-    <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 10 }}>今後の面接（{upcoming.length}件）</h3>
+    <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 10 }}>今後の面接・面談（{upcoming.length}件）</h3>
     {upcoming.length === 0 && <p style={{ color: C.textDim, fontSize: 12 }}>予定なし</p>}
     <div style={{ display: "grid", gap: 6, marginBottom: 24 }}>{upcoming.map((it, i) => <div key={it.id + it.type + i} onClick={() => onSelect(it)} style={{ background: C.card, borderRadius: 12, padding: "12px 14px", border: `1px solid ${C.border}`, cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}
       onMouseEnter={e => e.currentTarget.style.borderColor = C.accent + "50"} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
@@ -396,27 +525,34 @@ function InterviewView({ candidates, onSelect }) {
       <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 3 }}>{it.name}</div><div style={{ fontSize: 11, color: C.textSub }}>{it.type}面接　{fmtDateTime(it.date, it.time)}　{it.who || "担当未設定"}</div></div>
       <Badge status={it.status} />
     </div>)}</div>
-    <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 10 }}>面接結果（直近{Math.min(past.length, 20)}件）</h3>
-    <div style={{ display: "grid", gap: 6 }}>{past.slice(0, 20).map((it, i) => <div key={it.id + it.type + i} onClick={() => onSelect(it)} style={{ background: C.card, borderRadius: 10, padding: "10px 14px", border: `1px solid ${C.border}`, cursor: "pointer" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}><span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{it.name}</span><span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: it.result === "合格" ? C.okBg : it.result === "不合格" ? C.badBg : C.warnBg, color: it.result === "合格" ? C.ok : it.result === "不合格" ? C.bad : C.warn }}>{it.result}</span></div>
-      <div style={{ fontSize: 11, color: C.textSub }}>{it.type}面接　{fmtDate(it.date)}</div>
-      {it.result === "合格" && it.passReason && <div style={{ fontSize: 11, color: C.ok, marginTop: 3 }}>通過理由: {it.passReason}</div>}
-      {it.result === "不合格" && it.rejectReason && <div style={{ fontSize: 11, color: C.bad, marginTop: 3 }}>お見送り理由: {it.rejectReason}</div>}
-      {it.note && <div style={{ fontSize: 11, color: C.textDim, marginTop: 3 }}>所感: {it.note}</div>}
-    </div>)}</div>
+
+    <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 10 }}>面接・面談結果（直近{Math.min(past.length, 20)}件）</h3>
+    <div style={{ display: "grid", gap: 6 }}>{past.slice(0, 20).map((it, i) => {
+      const rc = resultColor(it.result);
+      return <div key={it.id + it.type + i} onClick={() => onSelect(it)} style={{ background: C.card, borderRadius: 10, padding: "10px 14px", border: `1px solid ${C.border}`, cursor: "pointer" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}><span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{it.name}</span><span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: rc.bg, color: rc.color }}>{it.result}</span></div>
+        <div style={{ fontSize: 11, color: C.textSub }}>{it.type}面接　{fmtDate(it.date)}</div>
+        {it.passReason && <div style={{ fontSize: 11, color: C.ok, marginTop: 3 }}>通過理由: {it.passReason}</div>}
+        {it.rejectReason && <div style={{ fontSize: 11, color: C.bad, marginTop: 3 }}>お見送り理由: {it.rejectReason}</div>}
+        {it.note && <div style={{ fontSize: 11, color: C.textDim, marginTop: 3 }}>所感: {it.note}</div>}
+      </div>;
+    })}</div>
   </div>;
 }
 
-// ─── Analytics Dashboard (v2) ───
+// ─── Analytics ───
 function AnalyticsView({ candidates }) {
   const [dt, setDt] = useState("funnel");
+
   const s = useMemo(() => {
-    const PASS_DOC = ["一次：調整中", "一次：日程確定", "一次：合格", "最終：調整中", "最終：日程確定", "最終：合格", "適性検査中", "内定：オファー面談", "内定：承諾", "入社済み"];
-    const PASS_1 = ["一次：合格", "最終：調整中", "最終：日程確定", "最終：合格", "適性検査中", "内定：オファー面談", "内定：承諾", "入社済み"];
-    const PASS_F = ["最終：合格", "適性検査中", "内定：オファー面談", "内定：承諾", "入社済み"];
+    const PASS_DOC = ["一次：調整中", "一次：日程確定", "一次：合格", "適性検査中", "最終：調整中", "最終：日程確定", "最終：合格", "内定：オファー面談", "内定：承諾", "入社済み"];
+    const PASS_1 = ["一次：合格", "適性検査中", "最終：調整中", "最終：日程確定", "最終：合格", "内定：オファー面談", "内定：承諾", "入社済み"];
+    const PASS_F = ["最終：合格", "内定：オファー面談", "内定：承諾", "入社済み"];
     const OFFER = ["内定：オファー面談", "内定：承諾", "入社済み"];
     const ACCEPTED = ["内定：承諾", "入社済み"];
+
     const total = candidates.length;
+    const casual = candidates.filter(c => c.status?.startsWith("カジュアル")).length;
     const docP = candidates.filter(c => PASS_DOC.includes(c.status)).length;
     const i1D = candidates.filter(c => c.interview1Result).length;
     const i1P = candidates.filter(c => PASS_1.includes(c.status) || c.interview1Result === "合格").length;
@@ -427,7 +563,7 @@ function AnalyticsView({ candidates }) {
     const entered = candidates.filter(c => c.status === "入社済み").length;
     const withdrew = candidates.filter(c => c.status === "辞退").length;
     const offerDec = candidates.filter(c => c.status === "内定：辞退").length;
-    // Speed analysis
+
     const speeds = { toInt1: [], toIntF: [], toOffer: [], total: [] };
     candidates.forEach(c => {
       if (c.appliedDate && c.interview1Date) { const d = daysBetween(c.appliedDate, c.interview1Date); if (d !== null && d >= 0) speeds.toInt1.push(d); }
@@ -436,7 +572,7 @@ function AnalyticsView({ candidates }) {
       if (c.appliedDate && (c.status === "内定：承諾" || c.status === "入社済み") && c.offerDate) { const d = daysBetween(c.appliedDate, c.offerDate); if (d !== null && d >= 0) speeds.total.push(d); }
     });
     const avg = (arr) => arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
-    // By source & position
+
     const bySrc = {}; const byPos = {};
     candidates.forEach(c => {
       const src = c.source || "不明";
@@ -444,20 +580,23 @@ function AnalyticsView({ candidates }) {
       bySrc[src].applied++; if (PASS_DOC.includes(c.status)) bySrc[src].docPass++; if (PASS_1.includes(c.status)) bySrc[src].pass1++;
       if (PASS_F.includes(c.status)) bySrc[src].passF++; if (OFFER.includes(c.status)) bySrc[src].offer++;
       if (ACCEPTED.includes(c.status)) bySrc[src].accepted++; if (c.status === "辞退" || c.status === "内定：辞退") bySrc[src].declined++;
+
       const p = c.position || "不明";
       if (!byPos[p]) byPos[p] = { applied: 0, docPass: 0, offer: 0, accepted: 0, inProc: 0 };
       byPos[p].applied++; if (PASS_DOC.includes(c.status)) byPos[p].docPass++; if (OFFER.includes(c.status)) byPos[p].offer++;
       if (ACCEPTED.includes(c.status)) byPos[p].accepted++;
-      if (!["辞退", "内定：辞退", "一次：不合格", "最終：不合格", "書類お見送り", "入社済み"].includes(c.status)) byPos[p].inProc++;
+      if (!["辞退", "内定：辞退", "一次：不合格", "最終：不合格", "書類お見送り", "入社済み", "カジュアル：辞退", "カジュアル：見送り"].includes(c.status)) byPos[p].inProc++;
     });
-    // Reject reasons
+
     const rejectReasons = {};
     candidates.forEach(c => {
       [c.docScreeningReason, c.interview1RejectReason, c.interviewFinalRejectReason].forEach(r => { if (r) rejectReasons[r] = (rejectReasons[r] || 0) + 1; });
     });
-    const decList = candidates.filter(c => c.status === "辞退" || c.status === "内定：辞退").map(c => ({ name: c.name, pos: c.position, src: c.source, st: c.status, memo: c.memo, reason: c.withdrawReason || "", timing: c.status === "内定：辞退" ? "内定辞退" : c.interview1Result ? "選考中辞退" : "選考前辞退" }));
-    const inProc = candidates.filter(c => !["辞退", "内定：辞退", "一次：不合格", "最終：不合格", "書類お見送り", "入社済み"].includes(c.status));
-    return { total, docP, i1D, i1P, iFD, iFP, offer, accepted, entered, withdrew, offerDec, allDec: withdrew + offerDec, bySrc, byPos, decList, inProc, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons };
+
+    const decList = candidates.filter(c => c.status === "辞退" || c.status === "内定：辞退" || c.status === "カジュアル：辞退").map(c => ({ name: c.name, pos: c.position, src: c.source, st: c.status, memo: c.memo, reason: c.withdrawReason || "", timing: c.status === "内定：辞退" ? "内定辞退" : c.status === "カジュアル：辞退" ? "カジュアル辞退" : c.interview1Result ? "選考中辞退" : "選考前辞退" }));
+    const inProc = candidates.filter(c => !["辞退", "内定：辞退", "一次：不合格", "最終：不合格", "書類お見送り", "入社済み", "カジュアル：辞退", "カジュアル：見送り"].includes(c.status));
+
+    return { total, casual, docP, i1D, i1P, iFD, iFP, offer, accepted, entered, withdrew, offerDec, allDec: withdrew + offerDec, bySrc, byPos, decList, inProc, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons };
   }, [candidates]);
 
   const dtabs = [{ key: "funnel", label: "ファネル", icon: "▼" }, { key: "speed", label: "選考スピード", icon: "⏱" }, { key: "channel", label: "チャネル別", icon: "◈" }, { key: "decline", label: "辞退分析", icon: "⚠" }, { key: "position", label: "職種別", icon: "◉" }, { key: "pipeline", label: "パイプライン", icon: "◎" }];
@@ -466,8 +605,10 @@ function AnalyticsView({ candidates }) {
     <div style={{ display: "flex", gap: 4, marginBottom: 20, flexWrap: "wrap" }}>
       {dtabs.map(t => <button key={t.key} onClick={() => setDt(t.key)} style={{ ...btnS, background: dt === t.key ? C.accent + "1a" : "transparent", color: dt === t.key ? C.accentL : C.textSub, borderRadius: 8, padding: "6px 14px", fontSize: 12, border: `1px solid ${dt === t.key ? C.accent + "40" : "transparent"}` }}>{t.icon} {t.label}</button>)}
     </div>
+
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10, marginBottom: 24 }}>
       <KPICard label="応募総数" value={s.total} icon="📥" color={C.info} />
+      <KPICard label="カジュアル" value={s.casual} icon="☕" color="#a78bfa" />
       <KPICard label="書類通過" value={s.docP} sub={s.total > 0 ? `通過率 ${Math.round((s.docP / s.total) * 100)}%` : ""} icon="📄" color={C.accent} />
       <KPICard label="一次通過" value={s.i1P} sub={s.i1D > 0 ? `通過率 ${Math.round((s.i1P / s.i1D) * 100)}%` : ""} icon="🗣" color="#8b5cf6" />
       <KPICard label="内定" value={s.offer} sub={s.total > 0 ? `転換率 ${(s.offer / s.total * 100).toFixed(1)}%` : ""} icon="🎯" color={C.accentL} />
@@ -481,7 +622,7 @@ function AnalyticsView({ candidates }) {
       <FunnelBar label="応募" value={s.total} maxVal={s.total} color={C.info} />
       <FunnelBar label="書類通過" value={s.docP} maxVal={s.total} rate={s.total > 0 ? Math.round((s.docP / s.total) * 100) : 0} color={C.accent} />
       <FunnelBar label="一次通過" value={s.i1P} maxVal={s.total} rate={s.i1D > 0 ? Math.round((s.i1P / s.i1D) * 100) : 0} color="#8b5cf6" sub={`実施済: ${s.i1D}名`} />
-      <FunnelBar label="最終通過" value={s.iFP} maxVal={s.total} rate={s.iFD > 0 ? Math.round((s.iFP / s.iFD) * 100) : 0} color="#06b6d4" sub={`実施済: ${s.iFD}名`} />
+      <FunnelBar label="適性検査→最終通過" value={s.iFP} maxVal={s.total} rate={s.iFD > 0 ? Math.round((s.iFP / s.iFD) * 100) : 0} color="#06b6d4" sub={`最終実施済: ${s.iFD}名`} />
       <FunnelBar label="内定" value={s.offer} maxVal={s.total} color={C.accentL} />
       <FunnelBar label="承諾・入社" value={s.accepted + s.entered} maxVal={s.total} rate={s.offer > 0 ? Math.round(((s.accepted + s.entered) / s.offer) * 100) : 0} color={C.ok} />
       {Object.keys(s.rejectReasons).length > 0 && <div style={{ marginTop: 20, padding: "14px 16px", background: C.surfaceAlt, borderRadius: 10 }}>
@@ -500,9 +641,6 @@ function AnalyticsView({ candidates }) {
             <div style={{ fontSize: 10, color: C.textDim, marginTop: 4 }}>目安: {k.target}日以内</div>
           </div>
         ))}
-      </div>
-      <div style={{ marginTop: 16, padding: "12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 11, color: C.textSub }}>
-        選考スピードは候補者の意欲維持に直結します。一般的に応募から一次面接まで2週間以内、内定まで5週間以内が理想とされています。
       </div>
     </div>}
 
@@ -533,7 +671,7 @@ function AnalyticsView({ candidates }) {
         <KPICard label="選考中辞退" value={s.withdrew} icon="↪" color={C.warn} />
       </div>
       {s.decList.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.textDim }}>辞退者なし</div> : <div>
-        <div style={{ display: "grid", gap: 6 }}>{s.decList.map((d, i) => <div key={i} style={{ display: "grid", gridTemplateColumns: "90px 1fr 90px 80px 100px", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
+        <div style={{ display: "grid", gap: 6 }}>{s.decList.map((d, i) => <div key={i} style={{ display: "grid", gridTemplateColumns: "90px 1fr 90px 100px 100px", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
           <span style={{ color: C.text, fontWeight: 600 }}>{d.name}</span><span style={{ color: C.textSub }}>{d.pos?.slice(0, 8)}</span><span style={{ color: C.textSub }}>{d.src}</span>
           <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 8, background: d.timing === "内定辞退" ? C.badBg : C.warnBg, color: d.timing === "内定辞退" ? C.bad : C.warn, whiteSpace: "nowrap" }}>{d.timing}</span>
           <span style={{ color: C.textDim, fontSize: 11 }}>{d.reason || "–"}</span>
@@ -559,9 +697,9 @@ function AnalyticsView({ candidates }) {
     {dt === "pipeline" && <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
       <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>パイプライン（{s.inProc.length}名）</h3>
       {s.inProc.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.textDim }}>選考中なし</div> :
-      <div style={{ display: "grid", gap: 6 }}>{s.inProc.sort((a, b) => STATUS_LIST.indexOf(a.status) - STATUS_LIST.indexOf(b.status)).map(c => <div key={c.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 110px 90px 50px", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
-        <span style={{ color: C.text, fontWeight: 600 }}>{c.name}</span><span style={{ color: C.textSub }}>{c.position?.slice(0, 10)}</span><Badge status={c.status} /><span style={{ color: C.textSub }}>{c.source}</span><DaysChip days={daysFromApply(c)} />
-      </div>)}</div>}
+        <div style={{ display: "grid", gap: 6 }}>{s.inProc.sort((a, b) => STATUS_LIST.indexOf(a.status) - STATUS_LIST.indexOf(b.status)).map(c => <div key={c.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 130px 90px 50px", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
+          <span style={{ color: C.text, fontWeight: 600 }}>{c.name}</span><span style={{ color: C.textSub }}>{c.position?.slice(0, 10)}</span><Badge status={c.status} /><span style={{ color: C.textSub }}>{c.source}</span><DaysChip days={daysFromApply(c)} />
+        </div>)}</div>}
     </div>}
   </div>;
 }
@@ -577,10 +715,16 @@ function parseCSV(text) {
   cur.push(field.trim()); if (cur.some(c => c)) lines.push(cur);
   return lines;
 }
+
 function mapStatus(raw) {
   if (!raw) return "書類選考中";
   const s = raw.trim();
   const exact = STATUS_LIST.find(st => st === s); if (exact) return exact;
+  if (s.includes("カジュアル") && s.includes("辞退")) return "カジュアル：辞退";
+  if (s.includes("カジュアル") && s.includes("見送")) return "カジュアル：見送り";
+  if (s.includes("カジュアル") && s.includes("完了")) return "カジュアル：完了";
+  if (s.includes("カジュアル") && s.includes("確定")) return "カジュアル：日程確定";
+  if (s.includes("カジュアル")) return "カジュアル：調整中";
   if (s.includes("不合格") && s.includes("一次")) return "一次：不合格";
   if (s.includes("不合格") && s.includes("最終")) return "最終：不合格";
   if (s.includes("合格") && s.includes("一次")) return "一次：合格";
@@ -600,6 +744,7 @@ function mapStatus(raw) {
   if (s.includes("書類")) return "書類選考中";
   return "書類選考中";
 }
+
 function parseDate(raw) { if (!raw) return ""; const s = raw.trim(); const iso = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/); if (iso) return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`; const jp = s.match(/(\d{1,2})\/(\d{1,2})/); if (jp) { const y = new Date().getFullYear(); return `${y}-${jp[1].padStart(2, "0")}-${jp[2].padStart(2, "0")}`; } return ""; }
 function parseTime(raw) { if (!raw) return ""; const m = raw.trim().match(/(\d{1,2}):(\d{2})/); return m ? `${m[1].padStart(2, "0")}:${m[2]}` : ""; }
 function findCol(headers, ...kw) { return headers.findIndex(h => { const hl = (h || "").replace(/\s+/g, ""); return kw.some(k => hl.includes(k)); }); }
@@ -608,15 +753,17 @@ function csvToCandidate(row, hIdx) {
   const g = (i) => i >= 0 && i < row.length ? (row[i] || "").trim() : "";
   return { ...emptyCandidate(), name: g(hIdx.name), status: mapStatus(g(hIdx.status)), position: g(hIdx.position) || "デジタルマーケティング", source: g(hIdx.source), appliedDate: parseDate(g(hIdx.appliedDate)) || new Date().toISOString().slice(0, 10), interviewer1: g(hIdx.interviewer1), interview1Date: parseDate(g(hIdx.int1Date)), interview1Time: parseTime(g(hIdx.int1Time)), interview1Result: g(hIdx.int1Result), interview1Note: g(hIdx.int1Note), interviewFinalDate: parseDate(g(hIdx.intFDate)), interviewFinalTime: parseTime(g(hIdx.intFTime)), interviewFinalResult: g(hIdx.intFResult), interviewFinalNote: g(hIdx.intFNote), memo: g(hIdx.memo) };
 }
+
 function detectColumns(headers) {
   const fc = (kw) => findCol(headers, ...kw);
   const findNth = (kw, n) => { const all = headers.map((h, i) => ({ h: (h || "").replace(/\s+/g, ""), i })).filter(x => kw.some(k => x.h.includes(k))); return all.length > n ? all[n].i : -1; };
   return { name: fc("氏名", "名前"), status: fc("ステータス"), position: fc("職種", "ポジション"), source: fc("経由", "チャネル", "媒体"), appliedDate: fc("応募日", "応募"), interviewer1: fc("面接官"), int1Date: findNth(["日程"], 0), int1Time: findNth(["時間"], 0), int1Result: findNth(["合否"], 0), int1Note: findNth(["所感"], 0), intFDate: findNth(["日程"], 1), intFTime: findNth(["時間"], 1), intFResult: findNth(["合否"], 1), intFNote: findNth(["所感"], 1), memo: fc("備考", "メモ") };
 }
+
 function exportCSV(candidates) {
-  const h = ["氏名","ステータス","職種","経由","応募日","年齢","現職社名","現職役職","現年収","希望年収","書類URL","書類お見送り理由","面接官(一次)","一次日程","一次時間","一次合否","一次通過理由","一次お見送り理由","一次所感","面接官(最終)","最終日程","最終時間","最終合否","最終通過理由","最終お見送り理由","最終所感","適性検査","オファー日","提示年収","承諾","辞退理由","入社予定日","備考"];
+  const h = ["氏名","ステータス","職種","経由","応募日","年齢","現職社名","現職役職","現年収","希望年収","書類URL","カジュアル面談日","カジュアル時間","カジュアル担当","カジュアル結果","カジュアルメモ","書類お見送り理由","面接官(一次)","一次日程","一次時間","一次合否","一次通過理由","一次お見送り理由","一次所感","適性検査送付","適性検査結果","適性検査メモ","面接官(最終)","最終日程","最終時間","最終合否","最終通過理由","最終お見送り理由","最終所感","オファー日","提示年収","承諾","辞退理由","入社予定日","備考"];
   const esc = (v) => { const s = String(v ?? ""); return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s; };
-  const rows = candidates.map(c => [c.name, c.status, c.position, c.source, c.appliedDate, c.age, c.currentCompany, c.currentPosition, c.currentSalary, c.desiredSalary, c.documentUrl, c.docScreeningReason, c.interviewer1, c.interview1Date, c.interview1Time, c.interview1Result, c.interview1PassReason, c.interview1RejectReason, c.interview1Note, c.interviewerFinal, c.interviewFinalDate, c.interviewFinalTime, c.interviewFinalResult, c.interviewFinalPassReason, c.interviewFinalRejectReason, c.interviewFinalNote, c.aptitudeSent, c.offerDate, c.offerSalary, c.accepted, c.withdrawReason, c.startDate, c.memo].map(esc).join(","));
+  const rows = candidates.map(c => [c.name, c.status, c.position, c.source, c.appliedDate, c.age, c.currentCompany, c.currentPosition, c.currentSalary, c.desiredSalary, c.documentUrl, c.casualDate, c.casualTime, c.casualInterviewer, c.casualResult, c.casualNote, c.docScreeningReason, c.interviewer1, c.interview1Date, c.interview1Time, c.interview1Result, c.interview1PassReason, c.interview1RejectReason, c.interview1Note, c.aptitudeSent, c.aptitudeResult, c.aptitudeNote, c.interviewerFinal, c.interviewFinalDate, c.interviewFinalTime, c.interviewFinalResult, c.interviewFinalPassReason, c.interviewFinalRejectReason, c.interviewFinalNote, c.offerDate, c.offerSalary, c.accepted, c.withdrawReason, c.startDate, c.memo].map(esc).join(","));
   return "\uFEFF" + h.join(",") + "\n" + rows.join("\n");
 }
 
@@ -637,6 +784,7 @@ function ImportModal({ open, onClose, onImport }) {
     };
     reader.readAsText(file, "UTF-8");
   };
+
   if (!open) return null;
   return <Modal open={open} onClose={() => { reset(); onClose(); }} title="CSVインポート" width={720}>
     {step === 1 && <div>
@@ -765,7 +913,6 @@ function App() {
     <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onImport={handleImport} />
   </div>;
 }
-
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(React.createElement(App));
