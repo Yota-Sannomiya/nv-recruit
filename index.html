@@ -26,24 +26,24 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbyBnmVegbUAJDRmmk8H4CXN
 
 const STATUS_LIST = [
   "カジュアル：調整中", "カジュアル：日程確定", "カジュアル：完了", "カジュアル：辞退", "カジュアル：見送り",
-  "書類選考中", "書類お見送り",
-  "一次：調整中", "一次：日程確定", "一次：合格", "一次：不合格",
-  "適性検査中",
-  "最終：調整中", "最終：日程確定", "最終：合格", "最終：不合格",
+  "書類選考中", "書類お見送り", "書類辞退",
+  "一次：調整中", "一次：日程確定", "一次：合格", "一次：不合格", "一次辞退",
+  "適性検査中", "適性検査辞退",
+  "最終：調整中", "最終：日程確定", "最終：合格", "最終：不合格", "最終辞退",
   "内定：オファー面談", "内定：承諾", "内定：辞退",
-  "辞退", "入社済み",
+  "入社済み",
 ];
 
 const KANBAN_COLUMNS = [
   { key: "カジュアル面談", statuses: ["カジュアル：調整中", "カジュアル：日程確定", "カジュアル：完了", "カジュアル：辞退", "カジュアル：見送り"], color: "#a78bfa" },
-  { key: "書類選考", statuses: ["書類選考中", "書類お見送り"], color: "#3b82f6" },
-  { key: "一次面接", statuses: ["一次：調整中", "一次：日程確定"], color: "#f59e0b" },
+  { key: "書類選考", statuses: ["書類選考中", "書類お見送り", "書類辞退"], color: "#3b82f6" },
+  { key: "一次面接", statuses: ["一次：調整中", "一次：日程確定", "一次辞退"], color: "#f59e0b" },
   { key: "一次結果", statuses: ["一次：合格", "一次：不合格"], color: "#8b5cf6" },
-  { key: "適性検査", statuses: ["適性検査中"], color: "#14b8a6" },
-  { key: "最終面接", statuses: ["最終：調整中", "最終：日程確定"], color: "#06b6d4" },
+  { key: "適性検査", statuses: ["適性検査中", "適性検査辞退"], color: "#14b8a6" },
+  { key: "最終面接", statuses: ["最終：調整中", "最終：日程確定", "最終辞退"], color: "#06b6d4" },
   { key: "最終結果", statuses: ["最終：合格", "最終：不合格"], color: "#ec4899" },
   { key: "内定", statuses: ["内定：オファー面談", "内定：承諾", "内定：辞退"], color: "#22c55e" },
-  { key: "辞退/入社", statuses: ["辞退", "入社済み"], color: "#6366f1" },
+  { key: "入社", statuses: ["入社済み"], color: "#6366f1" },
 ];
 
 const POSITIONS = ["デジタルマーケティング", "HubSpotコンサル", "営業"];
@@ -128,13 +128,16 @@ const statusColor = (s) => {
     "カジュアル：完了": ["#7c3aed", "#7c3aed14"], "カジュアル：辞退": ["#ef4444", "#ef444414"],
     "カジュアル：見送り": ["#ef4444", "#ef444414"],
     "書類選考中": ["#3b82f6", "#3b82f614"], "書類お見送り": ["#ef4444", "#ef444414"],
+    "書類辞退": ["#ef4444", "#ef444414"],
     "一次：調整中": ["#f59e0b", "#f59e0b14"], "一次：日程確定": ["#6366f1", "#6366f114"],
     "一次：合格": ["#22c55e", "#22c55e14"], "一次：不合格": ["#ef4444", "#ef444414"],
-    "適性検査中": ["#06b6d4", "#06b6d414"],
+    "一次辞退": ["#ef4444", "#ef444414"],
+    "適性検査中": ["#06b6d4", "#06b6d414"], "適性検査辞退": ["#ef4444", "#ef444414"],
     "最終：調整中": ["#f59e0b", "#f59e0b14"], "最終：日程確定": ["#8b5cf6", "#8b5cf614"],
     "最終：合格": ["#22c55e", "#22c55e14"], "最終：不合格": ["#ef4444", "#ef444414"],
+    "最終辞退": ["#ef4444", "#ef444414"],
     "内定：オファー面談": ["#8b5cf6", "#8b5cf614"], "内定：承諾": ["#22c55e", "#22c55e14"],
-    "内定：辞退": ["#ef4444", "#ef444414"], "辞退": ["#ef4444", "#ef444414"],
+    "内定：辞退": ["#ef4444", "#ef444414"],
     "入社済み": ["#10b981", "#10b98114"],
   };
   return m[s] || [C.textDim, C.border];
@@ -396,7 +399,7 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
 }
 
 // ─── List View ───
-const CLOSED_STATUSES = ["書類お見送り", "一次：不合格", "最終：不合格", "内定：辞退", "辞退", "入社済み", "カジュアル：辞退", "カジュアル：見送り"];
+const CLOSED_STATUSES = ["書類お見送り", "書類辞退", "一次：不合格", "一次辞退", "適性検査辞退", "最終：不合格", "最終辞退", "内定：辞退", "入社済み", "カジュアル：辞退", "カジュアル：見送り"];
 
 function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatus, onBulkDelete }) {
   const [q, setQ] = useState(""); const [fSt, setFSt] = useState("__active__"); const [fPos, setFPos] = useState(""); const [fSrc, setFSrc] = useState("");
@@ -558,71 +561,64 @@ function AnalyticsView({ candidates }) {
   const s = useMemo(() => {
     // ═══════════════════════════════════════════════════════════
     // 集計の設計思想:
-    //   ステータスベースではなく「そのステップを実際に通過したか」で判定する。
-    //   辞退者も、辞退する前に通過したステップは全てカウントする。
-    //   例: 最終面接後に辞退した人 → 書類通過・一次通過・最終通過にカウント
+    //   辞退ステータスがフェーズ別に分かれているため、
+    //   ステータスだけでどこまで進んだかを正確に判定できる。
+    //   例: 「最終辞退」→ 書類通過○、一次通過○、適性検査通過○、最終通過×
+    //   例: 「内定：辞退」→ 書類通過○、一次通過○、適性検査通過○、最終通過○、内定○
     //
-    //   判定方法:
-    //     1. 現在のステータスが「そのステップ以降」にある → 通過
-    //     2. 辞退者は、入力済みデータ（面接日・合否結果）から通過実績を推定
+    //   各ステップの通過ステージ:
+    //     書類通過 = ステージ4以上（一次の調整に入った = 書類を通過した）
+    //     一次通過 = ステージ6以上（適性検査 or 一次合格記録あり）
+    //     最終通過 = ステージ9以上（内定フェーズ or 最終合格記録あり）
+    //     内定     = ステージ10以上
     // ═══════════════════════════════════════════════════════════
 
-    // ステータスの進行順（番号が大きいほど先に進んでいる）
     const STAGE = {
       "カジュアル：調整中": 1, "カジュアル：日程確定": 1, "カジュアル：完了": 2,
       "カジュアル：辞退": 1, "カジュアル：見送り": 1,
-      "書類選考中": 3, "書類お見送り": 3,
-      "一次：調整中": 4, "一次：日程確定": 4, "一次：合格": 5, "一次：不合格": 4,
-      "適性検査中": 6,
-      "最終：調整中": 7, "最終：日程確定": 7, "最終：合格": 8, "最終：不合格": 7,
-      "内定：オファー面談": 9, "内定：承諾": 10, "内定：辞退": 9,
-      "辞退": 0, // 辞退はステージ不定、個別判定
-      "入社済み": 11,
+      "書類選考中": 3, "書類お見送り": 3, "書類辞退": 3,
+      "一次：調整中": 4, "一次：日程確定": 4, "一次：合格": 5, "一次：不合格": 4, "一次辞退": 4,
+      "適性検査中": 6, "適性検査辞退": 6,
+      "最終：調整中": 7, "最終：日程確定": 7, "最終：合格": 8, "最終：不合格": 7, "最終辞退": 7,
+      "内定：オファー面談": 10, "内定：承諾": 11, "内定：辞退": 10,
+      "入社済み": 12,
     };
 
     const stage = (c) => STAGE[c.status] || 0;
 
-    // 書類通過: ステージ4以上 or 辞退だが一次面接データがある
-    const isDocPass = (c) => {
-      if (stage(c) >= 4) return true;
-      if (c.status === "辞退" && (c.interview1Date || c.interview1Result)) return true;
-      return false;
-    };
-    // 一次通過: ステージ5以上 or 一次合格の記録がある
-    const is1Pass = (c) => {
-      if (stage(c) >= 5) return true;
-      if (c.interview1Result === "合格") return true;
-      if (c.status === "辞退" && (c.interviewFinalDate || c.interviewFinalResult || stage(c) >= 6)) return true;
-      return false;
-    };
-    // 最終通過: ステージ8以上 or 最終合格の記録がある
-    const isFPass = (c) => {
-      if (stage(c) >= 8) return true;
-      if (c.interviewFinalResult === "合格") return true;
-      if (c.status === "辞退" && c.offerDate) return true;
-      return false;
-    };
-    // 内定: ステージ9以上
-    const isOffer = (c) => {
-      if (stage(c) >= 9) return true;
-      if (c.status === "辞退" && c.offerDate) return true;
-      return false;
-    };
-    // 承諾: ステージ10以上
-    const isAccepted = (c) => stage(c) >= 10;
+    // 書類通過: ステージ4以上（一次の調整以降に進んだ人 = 書類を通過した）
+    const isDocPass = (c) => stage(c) >= 4;
+    // 一次通過: ステージ5以上 or 一次合格の記録
+    const is1Pass = (c) => stage(c) >= 5 || c.interview1Result === "合格";
+    // 最終通過: ステージ8以上 or 最終合格の記録
+    const isFPass = (c) => stage(c) >= 8 || c.interviewFinalResult === "合格";
+    // 承諾: ステージ11以上
+    const isAccepted = (c) => stage(c) >= 11;
+    // 辞退判定
+    const ALL_DECLINE = ["カジュアル：辞退", "書類辞退", "一次辞退", "適性検査辞退", "最終辞退", "内定：辞退"];
+    const isDecline = (c) => ALL_DECLINE.includes(c.status);
+
+    // ═══ 選考フロー ═══
+    // 応募 → 書類通過 → 一次実施 → 一次通過 → 最終実施 → 最終通過（＝内定）→ 承諾・入社
+    //
+    // 「最終面接通過 ＝ 内定」なので、最終通過と内定は同じ数。
+    // 内定辞退者も「内定は出した」のでカウントに含む。
 
     const total = candidates.length;
     const casual = candidates.filter(c => c.status?.startsWith("カジュアル")).length;
     const docP = candidates.filter(isDocPass).length;
-    const i1D = candidates.filter(c => c.interview1Result).length; // 一次面接実施済み
+    // 一次面接実施: 一次面接日 or 合否結果があればカウント
+    const i1D = candidates.filter(c => c.interview1Date || c.interview1Result).length;
     const i1P = candidates.filter(is1Pass).length;
-    const iFD = candidates.filter(c => c.interviewFinalResult).length; // 最終面接実施済み
+    // 最終面接実施: 最終面接日 or 合否結果があればカウント
+    const iFD = candidates.filter(c => c.interviewFinalDate || c.interviewFinalResult).length;
+    // 最終通過＝内定（同じ数）
     const iFP = candidates.filter(isFPass).length;
-    const offer = candidates.filter(isOffer).length;
+    // 承諾・入社
     const accepted = candidates.filter(isAccepted).length;
     const entered = candidates.filter(c => c.status === "入社済み").length;
-    const withdrew = candidates.filter(c => c.status === "辞退").length;
     const offerDec = candidates.filter(c => c.status === "内定：辞退").length;
+    const allDec = candidates.filter(isDecline).length;
 
     const speeds = { toInt1: [], toIntF: [], toOffer: [], total: [] };
     candidates.forEach(c => {
@@ -641,17 +637,17 @@ function AnalyticsView({ candidates }) {
       if (isDocPass(c)) bySrc[src].docPass++;
       if (is1Pass(c)) bySrc[src].pass1++;
       if (isFPass(c)) bySrc[src].passF++;
-      if (isOffer(c)) bySrc[src].offer++;
+      if (isFPass(c)) bySrc[src].offer++;
       if (isAccepted(c)) bySrc[src].accepted++;
-      if (c.status === "辞退" || c.status === "内定：辞退" || c.status === "カジュアル：辞退") bySrc[src].declined++;
+      if (isDecline(c)) bySrc[src].declined++;
 
       const p = c.position || "不明";
       if (!byPos[p]) byPos[p] = { applied: 0, docPass: 0, offer: 0, accepted: 0, inProc: 0 };
       byPos[p].applied++;
       if (isDocPass(c)) byPos[p].docPass++;
-      if (isOffer(c)) byPos[p].offer++;
+      if (isFPass(c)) byPos[p].offer++;
       if (isAccepted(c)) byPos[p].accepted++;
-      if (!["辞退", "内定：辞退", "一次：不合格", "最終：不合格", "書類お見送り", "入社済み", "カジュアル：辞退", "カジュアル：見送り"].includes(c.status)) byPos[p].inProc++;
+      if (!CLOSED_STATUSES.includes(c.status)) byPos[p].inProc++;
     });
 
     const rejectReasons = {};
@@ -668,16 +664,24 @@ function AnalyticsView({ candidates }) {
     // 辞退理由の集計
     const withdrawReasons = {};
     const withdrawTimings = {};
-    const decList = candidates.filter(c => c.status === "辞退" || c.status === "内定：辞退" || c.status === "カジュアル：辞退").map(c => {
-      const timing = c.status === "内定：辞退" ? "内定辞退" : c.status === "カジュアル：辞退" ? "カジュアル辞退" : c.interview1Result ? "選考中辞退" : "選考前辞退";
+    const TIMING_MAP = {
+      "カジュアル：辞退": "カジュアル辞退",
+      "書類辞退": "書類選考辞退",
+      "一次辞退": "一次面接辞退",
+      "適性検査辞退": "適性検査辞退",
+      "最終辞退": "最終面接辞退",
+      "内定：辞退": "内定辞退",
+    };
+    const decList = candidates.filter(isDecline).map(c => {
+      const timing = TIMING_MAP[c.status] || c.status;
       const reason = c.withdrawReason || "";
       if (reason) withdrawReasons[reason] = (withdrawReasons[reason] || 0) + 1;
       withdrawTimings[timing] = (withdrawTimings[timing] || 0) + 1;
       return { name: c.name, pos: c.position, src: c.source, st: c.status, memo: c.memo, reason, timing };
     });
-    const inProc = candidates.filter(c => !["辞退", "内定：辞退", "一次：不合格", "最終：不合格", "書類お見送り", "入社済み", "カジュアル：辞退", "カジュアル：見送り"].includes(c.status));
+    const inProc = candidates.filter(c => !CLOSED_STATUSES.includes(c.status));
 
-    return { total, casual, docP, i1D, i1P, iFD, iFP, offer, accepted, entered, withdrew, offerDec, allDec: withdrew + offerDec, bySrc, byPos, decList, inProc, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons, passReasons, withdrawReasons, withdrawTimings };
+    return { total, casual, docP, i1D, i1P, iFD, iFP, accepted, entered, offerDec, allDec, bySrc, byPos, decList, inProc, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons, passReasons, withdrawReasons, withdrawTimings };
   }, [candidates]);
 
   const dtabs = [{ key: "funnel", label: "ファネル", icon: "▼" }, { key: "speed", label: "選考スピード", icon: "⏱" }, { key: "channel", label: "チャネル別", icon: "◈" }, { key: "decline", label: "辞退分析", icon: "⚠" }, { key: "position", label: "職種別", icon: "◉" }, { key: "pipeline", label: "パイプライン", icon: "◎" }];
@@ -692,7 +696,7 @@ function AnalyticsView({ candidates }) {
       <KPICard label="カジュアル" value={s.casual} icon="☕" color="#a78bfa" />
       <KPICard label="書類通過" value={s.docP} sub={s.total > 0 ? `通過率 ${Math.round((s.docP / s.total) * 100)}%` : ""} icon="📄" color={C.accent} />
       <KPICard label="一次通過" value={s.i1P} sub={s.i1D > 0 ? `通過率 ${Math.round((s.i1P / s.i1D) * 100)}%` : ""} icon="🗣" color="#8b5cf6" />
-      <KPICard label="内定" value={s.offer} sub={s.total > 0 ? `転換率 ${(s.offer / s.total * 100).toFixed(1)}%` : ""} icon="🎯" color={C.accentL} />
+      <KPICard label="内定" value={s.iFP} sub={s.total > 0 ? `転換率 ${(s.iFP / s.total * 100).toFixed(1)}%` : ""} icon="🎯" color={C.accentL} />
       <KPICard label="承諾/入社" value={s.accepted + s.entered} icon="✅" color={C.ok} />
       <KPICard label="辞退" value={s.allDec} sub={s.offerDec > 0 ? `内定辞退 ${s.offerDec}名` : ""} icon="↩" color={C.bad} />
       <KPICard label="平均選考日数" value={s.speeds.toOffer !== null ? s.speeds.toOffer + "日" : "–"} sub="応募→内定" icon="⏱" color={C.warn} />
@@ -701,15 +705,16 @@ function AnalyticsView({ candidates }) {
     {dt === "funnel" && <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
       <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 20px" }}>選考ファネル</h3>
       <FunnelBar label="応募" value={s.total} maxVal={s.total} color={C.info} />
-      <FunnelBar label="書類通過" value={s.docP} maxVal={s.total} rate={s.total > 0 ? Math.round((s.docP / s.total) * 100) : 0} color={C.accent} />
-      <FunnelBar label="一次通過" value={s.i1P} maxVal={s.total} rate={s.i1D > 0 ? Math.round((s.i1P / s.i1D) * 100) : 0} cumRate={s.total > 0 ? ((s.i1P / s.total) * 100).toFixed(1) : 0} color="#8b5cf6" sub={`実施済: ${s.i1D}名`} />
-      <FunnelBar label="適性検査→最終通過" value={s.iFP} maxVal={s.total} rate={s.iFD > 0 ? Math.round((s.iFP / s.iFD) * 100) : 0} cumRate={s.total > 0 ? ((s.iFP / s.total) * 100).toFixed(1) : 0} color="#06b6d4" sub={`最終実施済: ${s.iFD}名`} />
-      <FunnelBar label="内定" value={s.offer} maxVal={s.total} cumRate={s.total > 0 ? ((s.offer / s.total) * 100).toFixed(1) : 0} color={C.accentL} />
-      <FunnelBar label="承諾・入社" value={s.accepted + s.entered} maxVal={s.total} rate={s.offer > 0 ? Math.round(((s.accepted + s.entered) / s.offer) * 100) : 0} cumRate={s.total > 0 ? (((s.accepted + s.entered) / s.total) * 100).toFixed(1) : 0} color={C.ok} />
+      <FunnelBar label="書類通過" value={s.docP} maxVal={s.total} rate={s.total > 0 ? Math.round((s.docP / s.total) * 100) : 0} cumRate={s.total > 0 ? ((s.docP / s.total) * 100).toFixed(1) : 0} color={C.accent} />
+      <FunnelBar label="一次面接実施" value={s.i1D} maxVal={s.total} rate={s.docP > 0 ? Math.round((s.i1D / s.docP) * 100) : 0} cumRate={s.total > 0 ? ((s.i1D / s.total) * 100).toFixed(1) : 0} color="#f59e0b" />
+      <FunnelBar label="一次面接通過" value={s.i1P} maxVal={s.total} rate={s.i1D > 0 ? Math.round((s.i1P / s.i1D) * 100) : 0} cumRate={s.total > 0 ? ((s.i1P / s.total) * 100).toFixed(1) : 0} color="#8b5cf6" />
+      <FunnelBar label="最終面接実施" value={s.iFD} maxVal={s.total} rate={s.i1P > 0 ? Math.round((s.iFD / s.i1P) * 100) : 0} cumRate={s.total > 0 ? ((s.iFD / s.total) * 100).toFixed(1) : 0} color="#06b6d4" />
+      <FunnelBar label="内定（最終通過）" value={s.iFP} maxVal={s.total} rate={s.iFD > 0 ? Math.round((s.iFP / s.iFD) * 100) : 0} cumRate={s.total > 0 ? ((s.iFP / s.total) * 100).toFixed(1) : 0} color={C.accentL} sub={s.offerDec > 0 ? `うち内定辞退 ${s.offerDec}名` : ""} />
+      <FunnelBar label="承諾・入社" value={s.accepted + s.entered} maxVal={s.total} rate={s.iFP > 0 ? Math.round(((s.accepted + s.entered) / s.iFP) * 100) : 0} cumRate={s.total > 0 ? (((s.accepted + s.entered) / s.total) * 100).toFixed(1) : 0} color={C.ok} />
       {s.total > 0 && <div style={{ marginTop: 16, padding: "14px 16px", background: C.accent + "10", borderRadius: 10, border: `1px solid ${C.accent}25` }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: C.accentL, marginBottom: 8 }}>採用効率</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
-          <div style={{ textAlign: "center" }}><div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{s.offer > 0 ? Math.round(s.total / s.offer) : "–"}</div><div style={{ fontSize: 10, color: C.textSub }}>応募/内定（1名内定に必要な応募数）</div></div>
+          <div style={{ textAlign: "center" }}><div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{s.iFP > 0 ? Math.round(s.total / s.iFP) : "–"}</div><div style={{ fontSize: 10, color: C.textSub }}>応募/内定（1名内定に必要な応募数）</div></div>
           <div style={{ textAlign: "center" }}><div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{(s.accepted + s.entered) > 0 ? Math.round(s.total / (s.accepted + s.entered)) : "–"}</div><div style={{ fontSize: 10, color: C.textSub }}>応募/入社（1名入社に必要な応募数）</div></div>
           <div style={{ textAlign: "center" }}><div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{s.docP > 0 ? Math.round(s.total / s.docP) : "–"}</div><div style={{ fontSize: 10, color: C.textSub }}>応募/書類通過</div></div>
         </div>
@@ -772,8 +777,8 @@ function AnalyticsView({ candidates }) {
       <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>辞退分析</h3>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 20 }}>
         <KPICard label="辞退合計" value={s.allDec} icon="↩" color={C.bad} />
-        <KPICard label="内定辞退" value={s.offerDec} icon="✕" color={C.bad} sub={s.offer + s.offerDec > 0 ? `辞退率 ${Math.round((s.offerDec / (s.offer + s.offerDec)) * 100)}%` : ""} />
-        <KPICard label="選考中辞退" value={s.withdrew} icon="↪" color={C.warn} />
+        <KPICard label="内定辞退" value={s.offerDec} icon="✕" color={C.bad} sub={s.iFP > 0 ? `辞退率 ${Math.round((s.offerDec / s.iFP) * 100)}%` : ""} />
+        <KPICard label="選考中辞退" value={s.allDec - s.offerDec} icon="↪" color={C.warn} />
       </div>
       {s.decList.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.textDim }}>辞退者なし</div> : <div>
         {/* 辞退理由の傾向 */}
@@ -865,9 +870,14 @@ function mapStatus(raw) {
   if (s.includes("調整") && s.includes("一次")) return "一次：調整中";
   if (s.includes("調整") && s.includes("最終")) return "最終：調整中";
   if (s.includes("辞退") && s.includes("内定")) return "内定：辞退";
-  if (s.includes("辞退")) return "辞退";
+  if (s.includes("辞退") && s.includes("最終")) return "最終辞退";
+  if (s.includes("辞退") && s.includes("適性")) return "適性検査辞退";
+  if (s.includes("辞退") && s.includes("一次")) return "一次辞退";
+  if (s.includes("辞退") && s.includes("書類")) return "書類辞退";
+  if (s.includes("辞退")) return "書類辞退";
   if (s.includes("承諾")) return "内定：承諾";
   if (s.includes("内定")) return "内定：オファー面談";
+  if (s.includes("適性") && s.includes("辞退")) return "適性検査辞退";
   if (s.includes("適性")) return "適性検査中";
   if (s.includes("入社")) return "入社済み";
   if (s.includes("お見送り") && s.includes("書類")) return "書類お見送り";
