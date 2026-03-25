@@ -556,21 +556,70 @@ function AnalyticsView({ candidates }) {
   const [dt, setDt] = useState("funnel");
 
   const s = useMemo(() => {
-    const PASS_DOC = ["一次：調整中", "一次：日程確定", "一次：合格", "適性検査中", "最終：調整中", "最終：日程確定", "最終：合格", "内定：オファー面談", "内定：承諾", "入社済み"];
-    const PASS_1 = ["一次：合格", "適性検査中", "最終：調整中", "最終：日程確定", "最終：合格", "内定：オファー面談", "内定：承諾", "入社済み"];
-    const PASS_F = ["最終：合格", "内定：オファー面談", "内定：承諾", "入社済み"];
-    const OFFER = ["内定：オファー面談", "内定：承諾", "入社済み"];
-    const ACCEPTED = ["内定：承諾", "入社済み"];
+    // ═══════════════════════════════════════════════════════════
+    // 集計の設計思想:
+    //   ステータスベースではなく「そのステップを実際に通過したか」で判定する。
+    //   辞退者も、辞退する前に通過したステップは全てカウントする。
+    //   例: 最終面接後に辞退した人 → 書類通過・一次通過・最終通過にカウント
+    //
+    //   判定方法:
+    //     1. 現在のステータスが「そのステップ以降」にある → 通過
+    //     2. 辞退者は、入力済みデータ（面接日・合否結果）から通過実績を推定
+    // ═══════════════════════════════════════════════════════════
+
+    // ステータスの進行順（番号が大きいほど先に進んでいる）
+    const STAGE = {
+      "カジュアル：調整中": 1, "カジュアル：日程確定": 1, "カジュアル：完了": 2,
+      "カジュアル：辞退": 1, "カジュアル：見送り": 1,
+      "書類選考中": 3, "書類お見送り": 3,
+      "一次：調整中": 4, "一次：日程確定": 4, "一次：合格": 5, "一次：不合格": 4,
+      "適性検査中": 6,
+      "最終：調整中": 7, "最終：日程確定": 7, "最終：合格": 8, "最終：不合格": 7,
+      "内定：オファー面談": 9, "内定：承諾": 10, "内定：辞退": 9,
+      "辞退": 0, // 辞退はステージ不定、個別判定
+      "入社済み": 11,
+    };
+
+    const stage = (c) => STAGE[c.status] || 0;
+
+    // 書類通過: ステージ4以上 or 辞退だが一次面接データがある
+    const isDocPass = (c) => {
+      if (stage(c) >= 4) return true;
+      if (c.status === "辞退" && (c.interview1Date || c.interview1Result)) return true;
+      return false;
+    };
+    // 一次通過: ステージ5以上 or 一次合格の記録がある
+    const is1Pass = (c) => {
+      if (stage(c) >= 5) return true;
+      if (c.interview1Result === "合格") return true;
+      if (c.status === "辞退" && (c.interviewFinalDate || c.interviewFinalResult || stage(c) >= 6)) return true;
+      return false;
+    };
+    // 最終通過: ステージ8以上 or 最終合格の記録がある
+    const isFPass = (c) => {
+      if (stage(c) >= 8) return true;
+      if (c.interviewFinalResult === "合格") return true;
+      if (c.status === "辞退" && c.offerDate) return true;
+      return false;
+    };
+    // 内定: ステージ9以上
+    const isOffer = (c) => {
+      if (stage(c) >= 9) return true;
+      if (c.status === "辞退" && c.offerDate) return true;
+      return false;
+    };
+    // 承諾: ステージ10以上
+    const isAccepted = (c) => stage(c) >= 10;
 
     const total = candidates.length;
     const casual = candidates.filter(c => c.status?.startsWith("カジュアル")).length;
-    const docP = candidates.filter(c => PASS_DOC.includes(c.status)).length;
-    const i1D = candidates.filter(c => c.interview1Result).length;
-    const i1P = candidates.filter(c => PASS_1.includes(c.status) || c.interview1Result === "合格").length;
-    const iFD = candidates.filter(c => c.interviewFinalResult).length;
-    const iFP = candidates.filter(c => PASS_F.includes(c.status) || c.interviewFinalResult === "合格").length;
-    const offer = candidates.filter(c => OFFER.includes(c.status)).length;
-    const accepted = candidates.filter(c => ACCEPTED.includes(c.status)).length;
+    const docP = candidates.filter(isDocPass).length;
+    const i1D = candidates.filter(c => c.interview1Result).length; // 一次面接実施済み
+    const i1P = candidates.filter(is1Pass).length;
+    const iFD = candidates.filter(c => c.interviewFinalResult).length; // 最終面接実施済み
+    const iFP = candidates.filter(isFPass).length;
+    const offer = candidates.filter(isOffer).length;
+    const accepted = candidates.filter(isAccepted).length;
     const entered = candidates.filter(c => c.status === "入社済み").length;
     const withdrew = candidates.filter(c => c.status === "辞退").length;
     const offerDec = candidates.filter(c => c.status === "内定：辞退").length;
@@ -588,14 +637,20 @@ function AnalyticsView({ candidates }) {
     candidates.forEach(c => {
       const src = c.source || "不明";
       if (!bySrc[src]) bySrc[src] = { applied: 0, docPass: 0, pass1: 0, passF: 0, offer: 0, accepted: 0, declined: 0 };
-      bySrc[src].applied++; if (PASS_DOC.includes(c.status)) bySrc[src].docPass++; if (PASS_1.includes(c.status)) bySrc[src].pass1++;
-      if (PASS_F.includes(c.status)) bySrc[src].passF++; if (OFFER.includes(c.status)) bySrc[src].offer++;
-      if (ACCEPTED.includes(c.status)) bySrc[src].accepted++; if (c.status === "辞退" || c.status === "内定：辞退") bySrc[src].declined++;
+      bySrc[src].applied++;
+      if (isDocPass(c)) bySrc[src].docPass++;
+      if (is1Pass(c)) bySrc[src].pass1++;
+      if (isFPass(c)) bySrc[src].passF++;
+      if (isOffer(c)) bySrc[src].offer++;
+      if (isAccepted(c)) bySrc[src].accepted++;
+      if (c.status === "辞退" || c.status === "内定：辞退" || c.status === "カジュアル：辞退") bySrc[src].declined++;
 
       const p = c.position || "不明";
       if (!byPos[p]) byPos[p] = { applied: 0, docPass: 0, offer: 0, accepted: 0, inProc: 0 };
-      byPos[p].applied++; if (PASS_DOC.includes(c.status)) byPos[p].docPass++; if (OFFER.includes(c.status)) byPos[p].offer++;
-      if (ACCEPTED.includes(c.status)) byPos[p].accepted++;
+      byPos[p].applied++;
+      if (isDocPass(c)) byPos[p].docPass++;
+      if (isOffer(c)) byPos[p].offer++;
+      if (isAccepted(c)) byPos[p].accepted++;
       if (!["辞退", "内定：辞退", "一次：不合格", "最終：不合格", "書類お見送り", "入社済み", "カジュアル：辞退", "カジュアル：見送り"].includes(c.status)) byPos[p].inProc++;
     });
 
