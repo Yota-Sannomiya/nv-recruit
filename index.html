@@ -25,13 +25,13 @@ const STORAGE_KEY = "nv-recruit-data";
 const PASSWORD_KEY = "nv-recruit-password";
 
 const STATUS_LIST = [
-  "書類選考中", "一次：調整中", "一次：日程確定", "一次：合格", "一次：不合格",
+  "書類選考中", "書類お見送り", "一次：調整中", "一次：日程確定", "一次：合格", "一次：不合格",
   "最終：調整中", "最終：日程確定", "最終：合格", "最終：不合格",
   "適性検査中", "内定：オファー面談", "内定：承諾", "内定：辞退", "辞退", "入社済み",
 ];
 
 const KANBAN_COLUMNS = [
-  { key: "書類選考", statuses: ["書類選考中"], color: "#3b82f6" },
+  { key: "書類選考", statuses: ["書類選考中", "書類お見送り"], color: "#3b82f6" },
   { key: "一次面接", statuses: ["一次：調整中", "一次：日程確定"], color: "#f59e0b" },
   { key: "一次結果", statuses: ["一次：合格", "一次：不合格"], color: "#8b5cf6" },
   { key: "最終面接", statuses: ["最終：調整中", "最終：日程確定"], color: "#06b6d4" },
@@ -75,7 +75,7 @@ const C = {
 
 const statusColor = (s) => {
   const m = {
-    "書類選考中": ["#3b82f6", "#3b82f614"], "一次：調整中": ["#f59e0b", "#f59e0b14"],
+    "書類選考中": ["#3b82f6", "#3b82f614"], "書類お見送り": ["#ef4444", "#ef444414"], "一次：調整中": ["#f59e0b", "#f59e0b14"],
     "一次：日程確定": ["#6366f1", "#6366f114"], "一次：合格": ["#22c55e", "#22c55e14"],
     "一次：不合格": ["#ef4444", "#ef444414"], "最終：調整中": ["#f59e0b", "#f59e0b14"],
     "最終：日程確定": ["#8b5cf6", "#8b5cf614"], "最終：合格": ["#22c55e", "#22c55e14"],
@@ -183,6 +183,8 @@ function mapStatus(raw) {
   if (s.includes("内定")) return "内定：オファー面談";
   if (s.includes("適性")) return "適性検査中";
   if (s.includes("入社")) return "入社済み";
+  if (s.includes("お見送り") && s.includes("書類")) return "書類お見送り";
+  if (s.includes("不合格") && s.includes("書類")) return "書類お見送り";
   if (s.includes("書類")) return "書類選考中";
   return "書類選考中";
 }
