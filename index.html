@@ -389,14 +389,18 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
 }
 
 // ─── List View ───
+const CLOSED_STATUSES = ["書類お見送り", "一次：不合格", "最終：不合格", "内定：辞退", "辞退", "入社済み", "カジュアル：辞退", "カジュアル：見送り"];
+
 function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatus, onBulkDelete }) {
-  const [q, setQ] = useState(""); const [fSt, setFSt] = useState(""); const [fPos, setFPos] = useState(""); const [fSrc, setFSrc] = useState("");
+  const [q, setQ] = useState(""); const [fSt, setFSt] = useState("__active__"); const [fPos, setFPos] = useState(""); const [fSrc, setFSrc] = useState("");
   const [selected, setSelected] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
 
   const filtered = useMemo(() => candidates.filter(c => {
     if (q && !c.name.includes(q) && !c.source.includes(q) && !c.memo?.includes(q) && !c.currentCompany?.includes(q)) return false;
-    return (!fSt || c.status === fSt) && (!fPos || c.position === fPos) && (!fSrc || c.source === fSrc);
+    if (fSt === "__active__" && CLOSED_STATUSES.includes(c.status)) return false;
+    if (fSt && fSt !== "__active__" && c.status !== fSt) return false;
+    return (!fPos || c.position === fPos) && (!fSrc || c.source === fSrc);
   }), [candidates, q, fSt, fPos, fSrc]);
 
   const allSel = filtered.length > 0 && filtered.every(c => selected.has(c.id));
@@ -406,7 +410,7 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatu
   return <div>
     <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
       <input placeholder="検索（氏名・経由・現職・備考）" value={q} onChange={e => setQ(e.target.value)} style={{ ...inp, width: 220 }} />
-      <select value={fSt} onChange={e => setFSt(e.target.value)} style={{ ...inp, width: 160, appearance: "auto" }}><option value="">全ステータス</option>{STATUS_LIST.map(s => <option key={s}>{s}</option>)}</select>
+      <select value={fSt} onChange={e => setFSt(e.target.value)} style={{ ...inp, width: 160, appearance: "auto" }}><option value="">全件表示</option><option value="__active__">選考中のみ</option>{STATUS_LIST.map(s => <option key={s}>{s}</option>)}</select>
       <select value={fPos} onChange={e => setFPos(e.target.value)} style={{ ...inp, width: 150, appearance: "auto" }}><option value="">全職種</option>{POSITIONS.map(s => <option key={s}>{s}</option>)}</select>
       <select value={fSrc} onChange={e => setFSrc(e.target.value)} style={{ ...inp, width: 130, appearance: "auto" }}><option value="">全経由</option>{SOURCES.map(s => <option key={s}>{s}</option>)}</select>
       <div style={{ flex: 1 }} />
