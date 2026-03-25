@@ -523,12 +523,26 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
   </div>;
 }
 
-function ListView({ candidates, onSelect, onAdd, onImport, onExport }) {
+function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatus, onBulkDelete }) {
   const [q, setQ] = useState(""); const [fSt, setFSt] = useState(""); const [fPos, setFPos] = useState(""); const [fSrc, setFSrc] = useState(""); const [fSit, setFSit] = useState("");
+  const [selected, setSelected] = useState(new Set());
+  const [bulkStatus, setBulkStatus] = useState("");
   const filtered = useMemo(() => candidates.filter(c => {
     if (q && !c.name.includes(q) && !c.source.includes(q) && !c.memo?.includes(q)) return false;
     return (!fSt || c.status === fSt) && (!fPos || c.position === fPos) && (!fSrc || c.source === fSrc) && (!fSit || c.situation === fSit);
   }), [candidates, q, fSt, fPos, fSrc, fSit]);
+
+  const allSelected = filtered.length > 0 && filtered.every(c => selected.has(c.id));
+  const toggleAll = () => {
+    if (allSelected) setSelected(new Set());
+    else setSelected(new Set(filtered.map(c => c.id)));
+  };
+  const toggleOne = (id) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelected(next);
+  };
+
   return <div>
     <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
       <input placeholder="検索…" value={q} onChange={e => setQ(e.target.value)} style={{ ...inp, width: 180 }} />
@@ -541,20 +555,47 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport }) {
       <button onClick={onImport} style={{ ...btnS, background: C.surfaceAlt, color: C.accentL, border: `1px solid ${C.accent}30`, fontSize: 11 }}>↑ CSV取込</button>
       <button onClick={onAdd} style={{ ...btnS, background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`, color: "#fff" }}>＋ 追加</button>
     </div>
+
+    {/* Bulk action bar */}
+    {selected.size > 0 && <div style={{
+      display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", marginBottom: 10,
+      background: C.accent + "14", borderRadius: 10, border: `1px solid ${C.accent}30`,
+    }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: C.accentL }}>{selected.size}名 選択中</span>
+      <select value={bulkStatus} onChange={e => setBulkStatus(e.target.value)} style={{ ...inp, width: 160, appearance: "auto", fontSize: 11 }}>
+        <option value="">ステータス一括変更</option>
+        {STATUS_LIST.map(s => <option key={s}>{s}</option>)}
+      </select>
+      <button onClick={() => { if (bulkStatus) { onBulkStatus([...selected], bulkStatus); setSelected(new Set()); setBulkStatus(""); } }} style={{ ...btnS, background: bulkStatus ? C.accent : C.surfaceAlt, color: bulkStatus ? "#fff" : C.textDim, fontSize: 11, padding: "6px 14px" }}>適用</button>
+      <div style={{ flex: 1 }} />
+      <button onClick={() => { if (confirm(`${selected.size}名を削除しますか？`)) { onBulkDelete([...selected]); setSelected(new Set()); } }} style={{ ...btnS, background: C.badBg, color: C.bad, fontSize: 11, padding: "6px 14px" }}>一括削除</button>
+      <button onClick={() => setSelected(new Set())} style={{ ...btnS, background: "transparent", color: C.textDim, fontSize: 11, padding: "6px 8px" }}>✕</button>
+    </div>}
+
     <div style={{ fontSize: 11, color: C.textSub, marginBottom: 8 }}>{filtered.length}件 / {candidates.length}件</div>
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-        <thead><tr style={{ borderBottom: `2px solid ${C.border}` }}>{["氏名", "ステータス", "ボール", "職種", "経由", "応募日", "一次", "最終", "状況"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: C.textDim, fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
-        <tbody>{filtered.map(c => <tr key={c.id} onClick={() => onSelect(c)} style={{ borderBottom: `1px solid ${C.border}`, cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.background = C.surfaceAlt} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-          <td style={{ padding: "8px 10px", color: C.text, fontWeight: 600, whiteSpace: "nowrap" }}>{c.name || "（未入力）"}</td>
-          <td style={{ padding: "8px 10px" }}><Badge status={c.status} /></td>
-          <td style={{ padding: "8px 10px", color: C.textSub }}>{c.ball}</td>
-          <td style={{ padding: "8px 10px", color: C.textSub, whiteSpace: "nowrap" }}>{c.position}</td>
-          <td style={{ padding: "8px 10px", color: C.textSub }}>{c.source}</td>
-          <td style={{ padding: "8px 10px", color: C.textSub, whiteSpace: "nowrap" }}>{c.appliedDate}</td>
-          <td style={{ padding: "8px 10px", color: C.textSub, whiteSpace: "nowrap" }}>{c.interview1Date}</td>
-          <td style={{ padding: "8px 10px", color: C.textSub, whiteSpace: "nowrap" }}>{c.interviewFinalDate}</td>
-          <td style={{ padding: "8px 10px" }}><span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: c.situation === "Open" ? C.okBg : C.badBg, color: c.situation === "Open" ? C.ok : C.bad }}>{c.situation}</span></td>
+        <thead><tr style={{ borderBottom: `2px solid ${C.border}` }}>
+          <th style={{ padding: "8px 6px", width: 32 }}>
+            <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ accentColor: C.accent, width: 14, height: 14, cursor: "pointer" }} />
+          </th>
+          {["氏名", "ステータス", "ボール", "職種", "経由", "応募日", "一次", "最終", "状況"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 10px", color: C.textDim, fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>)}
+        </tr></thead>
+        <tbody>{filtered.map(c => <tr key={c.id} style={{ borderBottom: `1px solid ${C.border}`, cursor: "pointer", background: selected.has(c.id) ? C.accent + "0a" : "transparent" }}
+          onMouseEnter={e => { if (!selected.has(c.id)) e.currentTarget.style.background = C.surfaceAlt; }}
+          onMouseLeave={e => { e.currentTarget.style.background = selected.has(c.id) ? C.accent + "0a" : "transparent"; }}>
+          <td style={{ padding: "8px 6px" }} onClick={e => e.stopPropagation()}>
+            <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggleOne(c.id)} style={{ accentColor: C.accent, width: 14, height: 14, cursor: "pointer" }} />
+          </td>
+          <td style={{ padding: "8px 10px", color: C.text, fontWeight: 600, whiteSpace: "nowrap" }} onClick={() => onSelect(c)}>{c.name || "（未入力）"}</td>
+          <td style={{ padding: "8px 10px" }} onClick={() => onSelect(c)}><Badge status={c.status} /></td>
+          <td style={{ padding: "8px 10px", color: C.textSub }} onClick={() => onSelect(c)}>{c.ball}</td>
+          <td style={{ padding: "8px 10px", color: C.textSub, whiteSpace: "nowrap" }} onClick={() => onSelect(c)}>{c.position}</td>
+          <td style={{ padding: "8px 10px", color: C.textSub }} onClick={() => onSelect(c)}>{c.source}</td>
+          <td style={{ padding: "8px 10px", color: C.textSub, whiteSpace: "nowrap" }} onClick={() => onSelect(c)}>{c.appliedDate}</td>
+          <td style={{ padding: "8px 10px", color: C.textSub, whiteSpace: "nowrap" }} onClick={() => onSelect(c)}>{c.interview1Date}</td>
+          <td style={{ padding: "8px 10px", color: C.textSub, whiteSpace: "nowrap" }} onClick={() => onSelect(c)}>{c.interviewFinalDate}</td>
+          <td style={{ padding: "8px 10px" }} onClick={() => onSelect(c)}><span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: c.situation === "Open" ? C.okBg : C.badBg, color: c.situation === "Open" ? C.ok : C.bad }}>{c.situation}</span></td>
         </tr>)}</tbody></table>
       {filtered.length === 0 && <div style={{ textAlign: "center", padding: 40, color: C.textDim, fontSize: 13 }}>該当なし</div>}
     </div>
@@ -868,6 +909,12 @@ function App() {
     if (mode === "replace") upd(data);
     else upd([...data, ...candidates]);
   };
+  const handleBulkStatus = (ids, status) => {
+    upd(candidates.map(c => ids.includes(c.id) ? { ...c, status } : c));
+  };
+  const handleBulkDelete = (ids) => {
+    upd(candidates.filter(c => !ids.includes(c.id)));
+  };
   const handleExport = () => {
     const csv = exportCSV(candidates);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -887,7 +934,7 @@ function App() {
       </div>
     </div>
     <div style={{ maxWidth: 1400, margin: "0 auto", padding: "20px 20px 60px" }}>
-      {tab === "list" && <ListView candidates={candidates} onSelect={openEdit} onAdd={openNew} onImport={() => setImportOpen(true)} onExport={handleExport} />}
+      {tab === "list" && <ListView candidates={candidates} onSelect={openEdit} onAdd={openNew} onImport={() => setImportOpen(true)} onExport={handleExport} onBulkStatus={handleBulkStatus} onBulkDelete={handleBulkDelete} />}
       {tab === "kanban" && <KanbanView candidates={candidates} onSelect={openEdit} onStatusChange={handleSC} />}
       {tab === "interview" && <InterviewView candidates={candidates} onSelect={openEdit} />}
       {tab === "analytics" && <AnalyticsView candidates={candidates} />}
