@@ -478,9 +478,17 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatu
 // ─── Kanban View ───
 function KanbanView({ candidates, onSelect, onStatusChange }) {
   const [dragId, setDragId] = useState(null);
-  return <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 16, minHeight: 400 }}>
+  const [showAll, setShowAll] = useState(false);
+  const filtered = showAll ? candidates : candidates.filter(c => !CLOSED_STATUSES.includes(c.status));
+
+  return <div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+      <div style={{ fontSize: 11, color: C.textSub }}>{filtered.length}名表示 / 全{candidates.length}名</div>
+      <button onClick={() => setShowAll(!showAll)} style={{ ...btnS, background: showAll ? C.accent + "1a" : C.surfaceAlt, color: showAll ? C.accentL : C.textSub, fontSize: 11, padding: "5px 12px", border: `1px solid ${showAll ? C.accent + "40" : C.border}` }}>{showAll ? "選考中のみ" : "全件表示"}</button>
+    </div>
+    <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 16, minHeight: 400 }}>
     {KANBAN_COLUMNS.map(col => {
-      const items = candidates.filter(c => col.statuses.includes(c.status));
+      const items = filtered.filter(c => col.statuses.includes(c.status));
       return <div key={col.key} onDragOver={e => e.preventDefault()} onDrop={() => { if (dragId) { onStatusChange(dragId, col.statuses[0]); setDragId(null); } }}
         style={{ minWidth: 190, flex: "0 0 210px", background: C.bg, borderRadius: 12, padding: 10, border: `1px solid ${C.border}` }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, padding: "0 4px" }}>
@@ -502,6 +510,7 @@ function KanbanView({ candidates, onSelect, onStatusChange }) {
         </div>
       </div>;
     })}
+  </div>
   </div>;
 }
 
