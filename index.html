@@ -62,17 +62,18 @@ const SOURCES = [
   // 自社・その他
   "HP応募（自社）", "その他", "不明",
 ];
-const INTERVIEWERS = ["今村さん", "田開さん", "髙山さん", "三宮さん", "市嶋さん", "その他"];
+const INTERVIEWERS = ["今村", "田開", "髙山", "三宮", "市嶋", "その他"];
 const REJECT_REASONS = ["スキル不足", "経験不足", "カルチャー不一致", "コミュニケーション", "希望条件不一致", "年齢", "学歴", "その他"];
 const WITHDRAW_REASONS = ["他社決定", "現職残留", "条件不一致", "ギャップ", "選考スピード", "志望度低下", "家庭事情", "不明", "その他"];
 const CASUAL_RESULTS = ["応募意思あり", "応募意思なし", "検討中", "見送り"];
+const TIME_SLOTS = (() => { const t = []; for (let h = 8; h <= 22; h++) { t.push(`${String(h).padStart(2,"0")}:00`); if (h < 22) t.push(`${String(h).padStart(2,"0")}:30`); } return t; })();
 
 const emptyCandidate = () => ({
   id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
   name: "", status: "書類選考中", statusChangedDate: new Date().toISOString().slice(0, 10),
   position: "デジタルマーケティング",
   source: "", appliedDate: new Date().toISOString().slice(0, 10),
-  age: "", currentCompany: "", currentPosition: "", currentSalary: "", desiredSalary: "",
+  age: "",
   documentUrl: "", memo: "",
   // カジュアル面談
   casualDate: "", casualTime: "", casualInterviewer: "", casualResult: "", casualNote: "",
@@ -87,7 +88,7 @@ const emptyCandidate = () => ({
   interviewerFinal: "", interviewFinalDate: "", interviewFinalTime: "",
   interviewFinalResult: "", interviewFinalPassReason: "", interviewFinalRejectReason: "", interviewFinalNote: "",
   // 内定
-  offerDate: "", offerSalary: "",
+  offerDate: "", offerTime: "",
   accepted: "", withdrawReason: "",
   startDate: "",
 });
@@ -196,11 +197,11 @@ function Section({ title, color = C.accentL, children }) {
 }
 
 // ─── Custom Calendar Picker ───
-function CalendarPicker({ value, onChange, label }) {
+const CalendarPicker = React.memo(function CalendarPicker({ value, onChange, label }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  const today = new Date();
-  const selDate = value ? new Date(value + "T00:00:00") : null;
+  const today = useMemo(() => new Date(), []);
+  const selDate = useMemo(() => value ? new Date(value + "T00:00:00") : null, [value]);
   const [viewYear, setViewYear] = useState(selDate ? selDate.getFullYear() : today.getFullYear());
   const [viewMonth, setViewMonth] = useState(selDate ? selDate.getMonth() : today.getMonth());
 
@@ -218,26 +219,27 @@ function CalendarPicker({ value, onChange, label }) {
     }
   }, [open]);
 
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
-  const cells = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  const cells = useMemo(() => {
+    const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+    const c = [];
+    for (let i = 0; i < firstDay; i++) c.push(null);
+    for (let d = 1; d <= daysInMonth; d++) c.push(d);
+    return c;
+  }, [viewYear, viewMonth]);
 
-  const prevM = () => { if (viewMonth === 0) { setViewMonth(11); setViewYear(viewYear - 1); } else setViewMonth(viewMonth - 1); };
-  const nextM = () => { if (viewMonth === 11) { setViewMonth(0); setViewYear(viewYear + 1); } else setViewMonth(viewMonth + 1); };
+  const prevM = useCallback(() => { if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1); } else setViewMonth(m => m - 1); }, [viewMonth]);
+  const nextM = useCallback(() => { if (viewMonth === 11) { setViewMonth(0); setViewYear(y => y + 1); } else setViewMonth(m => m + 1); }, [viewMonth]);
 
-  const pick = (day) => {
+  const pick = useCallback((day) => {
     const m = String(viewMonth + 1).padStart(2, "0");
     const d = String(day).padStart(2, "0");
     onChange(`${viewYear}-${m}-${d}`);
     setOpen(false);
-  };
+  }, [viewYear, viewMonth, onChange]);
 
-  const isToday = (day) => day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
-  const isSel = (day) => selDate && day === selDate.getDate() && viewMonth === selDate.getMonth() && viewYear === selDate.getFullYear();
-  const isSun = (idx) => idx % 7 === 0;
-  const isSat = (idx) => idx % 7 === 6;
+  const todayD = today.getDate(), todayM = today.getMonth(), todayY = today.getFullYear();
+  const selD = selDate?.getDate(), selM = selDate?.getMonth(), selY = selDate?.getFullYear();
 
   return <Fl label={label}>
     <div ref={ref} style={{ position: "relative" }}>
@@ -261,15 +263,12 @@ function CalendarPicker({ value, onChange, label }) {
             <div key={`e${idx}`} /> :
             <button key={idx} onClick={() => pick(day)} style={{
               ...btnS, padding: "6px 0", justifyContent: "center", fontSize: 12,
-              background: isSel(day) ? C.accent : isToday(day) ? C.accent + "20" : "transparent",
-              color: isSel(day) ? "#fff" : isSun(idx) ? "#ef4444" : isSat(idx) ? "#3b82f6" : C.text,
-              borderRadius: 8, border: isToday(day) && !isSel(day) ? `1px solid ${C.accent}40` : "1px solid transparent",
-              fontWeight: isToday(day) || isSel(day) ? 700 : 400,
+              background: (day === selD && viewMonth === selM && viewYear === selY) ? C.accent : (day === todayD && viewMonth === todayM && viewYear === todayY) ? C.accent + "20" : "transparent",
+              color: (day === selD && viewMonth === selM && viewYear === selY) ? "#fff" : idx % 7 === 0 ? "#ef4444" : idx % 7 === 6 ? "#3b82f6" : C.text,
+              borderRadius: 8, border: (day === todayD && viewMonth === todayM && viewYear === todayY) && !(day === selD && viewMonth === selM && viewYear === selY) ? `1px solid ${C.accent}40` : "1px solid transparent",
+              fontWeight: (day === todayD && viewMonth === todayM && viewYear === todayY) || (day === selD && viewMonth === selM && viewYear === selY) ? 700 : 400,
               width: "100%",
-            }}
-            onMouseEnter={e => { if (!isSel(day)) e.currentTarget.style.background = C.cardHover; }}
-            onMouseLeave={e => { if (!isSel(day)) e.currentTarget.style.background = isToday(day) ? C.accent + "20" : "transparent"; }}
-            >{day}</button>
+            }}>{day}</button>
           )}
         </div>
         <div style={{ display: "flex", justifyContent: "center", marginTop: 8, gap: 6 }}>
@@ -278,7 +277,7 @@ function CalendarPicker({ value, onChange, label }) {
       </div>}
     </div>
   </Fl>;
-}
+});
 
 function KPICard({ label, value, sub, color = C.accent, icon }) {
   return <div style={{ background: C.card, borderRadius: 14, padding: "20px 18px", border: `1px solid ${C.border}`, position: "relative", overflow: "hidden" }}>
@@ -326,10 +325,6 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
       <SFl label="経由" value={c.source} onChange={v => u("source", v)} options={SOURCES} />
       <CalendarPicker label="応募日" value={c.appliedDate} onChange={v => u("appliedDate", v)} />
       <IFl label="年齢" value={c.age} onChange={v => u("age", v)} placeholder="28" />
-      <IFl label="現職（社名）" value={c.currentCompany} onChange={v => u("currentCompany", v)} />
-      <IFl label="現職（役職・職種）" value={c.currentPosition} onChange={v => u("currentPosition", v)} />
-      <IFl label="現年収（万円）" value={c.currentSalary} onChange={v => u("currentSalary", v)} placeholder="500" />
-      <IFl label="希望年収（万円）" value={c.desiredSalary} onChange={v => u("desiredSalary", v)} placeholder="600" />
     </div>
     <IFl label="書類URL（Google Drive等）" value={c.documentUrl} onChange={v => u("documentUrl", v)} placeholder="https://drive.google.com/..." />
 
@@ -338,7 +333,7 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
         <SFl label="面談担当" value={c.casualInterviewer} onChange={v => u("casualInterviewer", v)} options={INTERVIEWERS} />
         <CalendarPicker label="面談日" value={c.casualDate} onChange={v => u("casualDate", v)} />
-        <IFl label="時間" value={c.casualTime} onChange={v => u("casualTime", v)} type="time" />
+        <SFl label="時間" value={c.casualTime} onChange={v => u("casualTime", v)} options={TIME_SLOTS} />
         <SFl label="結果" value={c.casualResult} onChange={v => u("casualResult", v)} options={CASUAL_RESULTS} />
       </div>
       <TFl label="面談メモ・所感" value={c.casualNote} onChange={v => u("casualNote", v)} />
@@ -357,7 +352,7 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
         <SFl label="面接官" value={c.interviewer1} onChange={v => u("interviewer1", v)} options={INTERVIEWERS} />
         <CalendarPicker label="日程" value={c.interview1Date} onChange={v => u("interview1Date", v)} />
-        <IFl label="時間" value={c.interview1Time} onChange={v => u("interview1Time", v)} type="time" />
+        <SFl label="時間" value={c.interview1Time} onChange={v => u("interview1Time", v)} options={TIME_SLOTS} />
         <SFl label="合否" value={c.interview1Result} onChange={v => u("interview1Result", v)} options={["合格", "不合格", "保留"]} />
         <IFl label="通過理由" value={c.interview1PassReason} onChange={v => u("interview1PassReason", v)} placeholder="論理的思考力が高い、等" />
         <SFl label="お見送り理由" value={c.interview1RejectReason} onChange={v => u("interview1RejectReason", v)} options={REJECT_REASONS} />
@@ -379,7 +374,7 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
         <SFl label="面接官" value={c.interviewerFinal} onChange={v => u("interviewerFinal", v)} options={INTERVIEWERS} />
         <CalendarPicker label="日程" value={c.interviewFinalDate} onChange={v => u("interviewFinalDate", v)} />
-        <IFl label="時間" value={c.interviewFinalTime} onChange={v => u("interviewFinalTime", v)} type="time" />
+        <SFl label="時間" value={c.interviewFinalTime} onChange={v => u("interviewFinalTime", v)} options={TIME_SLOTS} />
         <SFl label="合否" value={c.interviewFinalResult} onChange={v => u("interviewFinalResult", v)} options={["合格", "不合格", "保留"]} />
         <IFl label="通過理由" value={c.interviewFinalPassReason} onChange={v => u("interviewFinalPassReason", v)} />
         <SFl label="お見送り理由" value={c.interviewFinalRejectReason} onChange={v => u("interviewFinalRejectReason", v)} options={REJECT_REASONS} />
@@ -391,7 +386,7 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
     <Section title="内定・入社" color="#22c55e">
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
         <CalendarPicker label="オファー面談日" value={c.offerDate} onChange={v => u("offerDate", v)} />
-        <IFl label="提示年収（万円）" value={c.offerSalary} onChange={v => u("offerSalary", v)} placeholder="550" />
+        <SFl label="オファー面談時間" value={c.offerTime} onChange={v => u("offerTime", v)} options={TIME_SLOTS} />
         <SFl label="承諾状況" value={c.accepted} onChange={v => u("accepted", v)} options={["承諾", "辞退", "検討中"]} />
         <SFl label="辞退理由" value={c.withdrawReason} onChange={v => u("withdrawReason", v)} options={WITHDRAW_REASONS} />
         <CalendarPicker label="入社予定日" value={c.startDate} onChange={v => u("startDate", v)} />
@@ -416,7 +411,7 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatu
   const [bulkStatus, setBulkStatus] = useState("");
 
   const filtered = useMemo(() => candidates.filter(c => {
-    if (q && !c.name.includes(q) && !c.source.includes(q) && !c.memo?.includes(q) && !c.currentCompany?.includes(q)) return false;
+    if (q && !c.name.includes(q) && !c.source.includes(q) && !c.memo?.includes(q)) return false;
     if (fSt === "__active__" && CLOSED_STATUSES.includes(c.status)) return false;
     if (fSt && fSt !== "__active__" && c.status !== fSt) return false;
     return (!fPos || c.position === fPos) && (!fSrc || c.source === fSrc);
@@ -911,9 +906,9 @@ function detectColumns(headers) {
 }
 
 function exportCSV(candidates) {
-  const h = ["氏名","ステータス","ステータス更新日","職種","経由","応募日","年齢","現職社名","現職役職","現年収","希望年収","書類URL","カジュアル面談日","カジュアル時間","カジュアル担当","カジュアル結果","カジュアルメモ","書類お見送り理由","面接官(一次)","一次日程","一次時間","一次合否","一次通過理由","一次お見送り理由","一次所感","適性検査送付","適性検査結果","適性検査メモ","面接官(最終)","最終日程","最終時間","最終合否","最終通過理由","最終お見送り理由","最終所感","オファー日","提示年収","承諾","辞退理由","入社予定日","備考"];
+  const h = ["氏名","ステータス","ステータス更新日","職種","経由","応募日","年齢","書類URL","カジュアル面談日","カジュアル時間","カジュアル担当","カジュアル結果","カジュアルメモ","書類お見送り理由","面接官(一次)","一次日程","一次時間","一次合否","一次通過理由","一次お見送り理由","一次所感","適性検査送付","適性検査結果","適性検査メモ","面接官(最終)","最終日程","最終時間","最終合否","最終通過理由","最終お見送り理由","最終所感","オファー日","オファー時間","承諾","辞退理由","入社予定日","備考"];
   const esc = (v) => { const s = String(v ?? ""); return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s; };
-  const rows = candidates.map(c => [c.name, c.status, c.statusChangedDate, c.position, c.source, c.appliedDate, c.age, c.currentCompany, c.currentPosition, c.currentSalary, c.desiredSalary, c.documentUrl, c.casualDate, c.casualTime, c.casualInterviewer, c.casualResult, c.casualNote, c.docScreeningReason, c.interviewer1, c.interview1Date, c.interview1Time, c.interview1Result, c.interview1PassReason, c.interview1RejectReason, c.interview1Note, c.aptitudeSent, c.aptitudeResult, c.aptitudeNote, c.interviewerFinal, c.interviewFinalDate, c.interviewFinalTime, c.interviewFinalResult, c.interviewFinalPassReason, c.interviewFinalRejectReason, c.interviewFinalNote, c.offerDate, c.offerSalary, c.accepted, c.withdrawReason, c.startDate, c.memo].map(esc).join(","));
+  const rows = candidates.map(c => [c.name, c.status, c.statusChangedDate, c.position, c.source, c.appliedDate, c.age, c.documentUrl, c.casualDate, c.casualTime, c.casualInterviewer, c.casualResult, c.casualNote, c.docScreeningReason, c.interviewer1, c.interview1Date, c.interview1Time, c.interview1Result, c.interview1PassReason, c.interview1RejectReason, c.interview1Note, c.aptitudeSent, c.aptitudeResult, c.aptitudeNote, c.interviewerFinal, c.interviewFinalDate, c.interviewFinalTime, c.interviewFinalResult, c.interviewFinalPassReason, c.interviewFinalRejectReason, c.interviewFinalNote, c.offerDate, c.offerTime, c.accepted, c.withdrawReason, c.startDate, c.memo].map(esc).join(","));
   return "\uFEFF" + h.join(",") + "\n" + rows.join("\n");
 }
 
