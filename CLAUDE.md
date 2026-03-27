@@ -57,3 +57,4 @@ The app includes a custom CSV parser (handles quoted fields) and column auto-det
 - 実装前に必ず壁打ち・要件整理をしてから作る。いきなりコードを書かない
 - 日本語で応答する
 - GitHub Pagesでホスティング。変更はcommit & pushで反映
+- 実装完了後はコミットとプッシュまで一連で行うこと
