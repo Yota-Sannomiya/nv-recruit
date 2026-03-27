@@ -27,22 +27,26 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbyBnmVegbUAJDRmmk8H4CXN
 const STATUS_LIST = [
   "カジュアル：調整中", "カジュアル：日程確定", "カジュアル：完了", "カジュアル：辞退", "カジュアル：見送り",
   "書類選考中", "書類お見送り", "書類辞退",
-  "一次：調整中", "一次：日程確定", "一次：合格", "一次：不合格", "一次辞退",
+  "一次：調整中", "一次：日程確定", "一次：合格", "一次：不合格", "一次：保留", "一次辞退",
+  "二次：調整中", "二次：日程確定", "二次：合格", "二次：不合格", "二次辞退",
   "適性検査中", "適性検査辞退",
-  "最終：調整中", "最終：日程確定", "最終：合格", "最終：不合格", "最終辞退",
-  "内定：オファー面談", "内定：承諾", "内定：辞退",
+  "最終：調整中", "最終：日程確定", "最終：合格", "最終：不合格", "最終：保留", "最終辞退",
+  "内定：オファー面談", "内定：承諾", "内定：辞退", "内定：保留",
   "入社済み",
 ];
+const STATUS_2ND = ["二次：調整中", "二次：日程確定", "二次：合格", "二次：不合格", "二次辞退"];
 
-const KANBAN_COLUMNS = [
+const KANBAN_COLUMNS_ALL = [
   { key: "カジュアル面談", statuses: ["カジュアル：調整中", "カジュアル：日程確定", "カジュアル：完了", "カジュアル：辞退", "カジュアル：見送り"], color: "#a78bfa" },
   { key: "書類選考", statuses: ["書類選考中", "書類お見送り", "書類辞退"], color: "#3b82f6" },
   { key: "一次面接", statuses: ["一次：調整中", "一次：日程確定", "一次辞退"], color: "#f59e0b" },
-  { key: "一次結果", statuses: ["一次：合格", "一次：不合格"], color: "#8b5cf6" },
+  { key: "一次結果", statuses: ["一次：合格", "一次：不合格", "一次：保留"], color: "#8b5cf6" },
+  { key: "二次面接", statuses: ["二次：調整中", "二次：日程確定", "二次辞退"], color: "#e879f9", is2nd: true },
+  { key: "二次結果", statuses: ["二次：合格", "二次：不合格"], color: "#c084fc", is2nd: true },
   { key: "適性検査", statuses: ["適性検査中", "適性検査辞退"], color: "#14b8a6" },
   { key: "最終面接", statuses: ["最終：調整中", "最終：日程確定", "最終辞退"], color: "#06b6d4" },
-  { key: "最終結果", statuses: ["最終：合格", "最終：不合格"], color: "#ec4899" },
-  { key: "内定", statuses: ["内定：オファー面談", "内定：承諾", "内定：辞退"], color: "#22c55e" },
+  { key: "最終結果", statuses: ["最終：合格", "最終：不合格", "最終：保留"], color: "#ec4899" },
+  { key: "内定", statuses: ["内定：オファー面談", "内定：承諾", "内定：辞退", "内定：保留"], color: "#22c55e" },
   { key: "入社", statuses: ["入社済み"], color: "#6366f1" },
 ];
 
@@ -82,6 +86,9 @@ const emptyCandidate = () => ({
   // 一次面接
   interviewer1: "", interview1Date: "", interview1Time: "",
   interview1Result: "", interview1PassReason: "", interview1RejectReason: "", interview1Note: "",
+  // 二次面接
+  interviewer2: "", interview2Date: "", interview2Time: "",
+  interview2Result: "", interview2PassReason: "", interview2RejectReason: "", interview2Note: "",
   // 適性検査
   aptitudeSent: false, aptitudeResult: "", aptitudeNote: "",
   // 最終面接
@@ -95,8 +102,8 @@ const emptyCandidate = () => ({
 
 // ─── Utility ───
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
-const DATE_FIELDS = ["appliedDate", "statusChangedDate", "casualDate", "interview1Date", "interviewFinalDate", "offerDate", "startDate"];
-const TIME_FIELDS = ["casualTime", "interview1Time", "interviewFinalTime", "offerTime"];
+const DATE_FIELDS = ["appliedDate", "statusChangedDate", "casualDate", "interview1Date", "interview2Date", "interviewFinalDate", "offerDate", "startDate"];
+const TIME_FIELDS = ["casualTime", "interview1Time", "interview2Time", "interviewFinalTime", "offerTime"];
 function normalizeDate(v) {
   if (!v) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
@@ -167,13 +174,16 @@ const statusColor = (s) => {
     "書類辞退": ["#ef4444", "#ef444414"],
     "一次：調整中": ["#f59e0b", "#f59e0b14"], "一次：日程確定": ["#6366f1", "#6366f114"],
     "一次：合格": ["#22c55e", "#22c55e14"], "一次：不合格": ["#ef4444", "#ef444414"],
-    "一次辞退": ["#ef4444", "#ef444414"],
+    "一次：保留": ["#f59e0b", "#f59e0b14"], "一次辞退": ["#ef4444", "#ef444414"],
+    "二次：調整中": ["#e879f9", "#e879f914"], "二次：日程確定": ["#c084fc", "#c084fc14"],
+    "二次：合格": ["#22c55e", "#22c55e14"], "二次：不合格": ["#ef4444", "#ef444414"],
+    "二次辞退": ["#ef4444", "#ef444414"],
     "適性検査中": ["#06b6d4", "#06b6d414"], "適性検査辞退": ["#ef4444", "#ef444414"],
     "最終：調整中": ["#f59e0b", "#f59e0b14"], "最終：日程確定": ["#8b5cf6", "#8b5cf614"],
     "最終：合格": ["#22c55e", "#22c55e14"], "最終：不合格": ["#ef4444", "#ef444414"],
-    "最終辞退": ["#ef4444", "#ef444414"],
+    "最終：保留": ["#f59e0b", "#f59e0b14"], "最終辞退": ["#ef4444", "#ef444414"],
     "内定：オファー面談": ["#8b5cf6", "#8b5cf614"], "内定：承諾": ["#22c55e", "#22c55e14"],
-    "内定：辞退": ["#ef4444", "#ef444414"],
+    "内定：辞退": ["#ef4444", "#ef444414"], "内定：保留": ["#f59e0b", "#f59e0b14"],
     "入社済み": ["#10b981", "#10b98114"],
   };
   return m[s] || [C.textDim, C.border];
@@ -334,9 +344,10 @@ function FunnelBar({ label, value, maxVal, rate, cumRate, color, sub, onClick })
 }
 
 // ─── Candidate Form ───
-function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
+function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew, use2nd }) {
   const u = (f, v) => onChange({ ...c, [f]: v });
   const elapsed = daysFromApply(c);
+  const statusOptions = use2nd ? STATUS_LIST : STATUS_LIST.filter(s => !STATUS_2ND.includes(s));
 
   return <div>
     {!isNew && elapsed !== null && <div style={{ display: "flex", gap: 10, marginBottom: 14, fontSize: 11, color: C.textSub }}>
@@ -347,7 +358,7 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
 
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
       <IFl label="氏名" value={c.name} onChange={v => u("name", v)} />
-      <SFl label="ステータス" value={c.status} onChange={v => { onChange({ ...c, status: v, statusChangedDate: v !== c.status ? new Date().toISOString().slice(0, 10) : c.statusChangedDate }); }} options={STATUS_LIST} allowEmpty={false} />
+      <SFl label="ステータス" value={c.status} onChange={v => { onChange({ ...c, status: v, statusChangedDate: v !== c.status ? new Date().toISOString().slice(0, 10) : c.statusChangedDate }); }} options={statusOptions} allowEmpty={false} />
       <SFl label="職種" value={c.position} onChange={v => u("position", v)} options={POSITIONS} allowEmpty={false} />
       <SFl label="経由" value={c.source} onChange={v => u("source", v)} options={SOURCES} />
       <CalendarPicker label="応募日" value={c.appliedDate} onChange={v => u("appliedDate", v)} />
@@ -386,6 +397,19 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
       </div>
       <TFl label="所感・詳細メモ" value={c.interview1Note} onChange={v => u("interview1Note", v)} />
     </Section>
+
+    {/* 二次面接 */}
+    {use2nd && <Section title="二次面接" color="#e879f9">
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+        <SFl label="面接官" value={c.interviewer2} onChange={v => u("interviewer2", v)} options={INTERVIEWERS} />
+        <CalendarPicker label="日程" value={c.interview2Date} onChange={v => u("interview2Date", v)} />
+        <SFl label="時間" value={c.interview2Time} onChange={v => u("interview2Time", v)} options={TIME_SLOTS} />
+        <SFl label="合否" value={c.interview2Result} onChange={v => u("interview2Result", v)} options={["合格", "不合格", "保留"]} />
+        <IFl label="通過理由" value={c.interview2PassReason} onChange={v => u("interview2PassReason", v)} placeholder="論理的思考力が高い、等" />
+        <SFl label="お見送り理由" value={c.interview2RejectReason} onChange={v => u("interview2RejectReason", v)} options={REJECT_REASONS} />
+      </div>
+      <TFl label="所感・詳細メモ" value={c.interview2Note} onChange={v => u("interview2Note", v)} />
+    </Section>}
 
     {/* 適性検査 */}
     <Section title="適性検査" color="#06b6d4">
@@ -430,7 +454,7 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
 }
 
 // ─── List View ───
-const CLOSED_STATUSES = ["書類お見送り", "書類辞退", "一次：不合格", "一次辞退", "適性検査辞退", "最終：不合格", "最終辞退", "内定：辞退", "入社済み", "カジュアル：辞退", "カジュアル：見送り"];
+const CLOSED_STATUSES = ["書類お見送り", "書類辞退", "一次：不合格", "一次辞退", "二次：不合格", "二次辞退", "適性検査辞退", "最終：不合格", "最終辞退", "内定：辞退", "入社済み", "カジュアル：辞退", "カジュアル：見送り"];
 
 function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatus, onBulkDelete }) {
   const [q, setQ] = useState(""); const [fStMode, setFStMode] = useState("active"); const [fStSet, setFStSet] = useState(new Set()); const [fPos, setFPos] = useState(""); const [fSrc, setFSrc] = useState("");
@@ -531,10 +555,11 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatu
 }
 
 // ─── Kanban View ───
-function KanbanView({ candidates, onSelect, onStatusChange }) {
+function KanbanView({ candidates, onSelect, onStatusChange, use2nd }) {
   const [dragId, setDragId] = useState(null);
   const [showAll, setShowAll] = useState(false);
   const filtered = showAll ? candidates : candidates.filter(c => !CLOSED_STATUSES.includes(c.status));
+  const columns = use2nd ? KANBAN_COLUMNS_ALL : KANBAN_COLUMNS_ALL.filter(col => !col.is2nd);
 
   return <div>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -542,7 +567,7 @@ function KanbanView({ candidates, onSelect, onStatusChange }) {
       <button onClick={() => setShowAll(!showAll)} style={{ ...btnS, background: showAll ? C.accent + "1a" : C.surfaceAlt, color: showAll ? C.accentL : C.textSub, fontSize: 11, padding: "5px 12px", border: `1px solid ${showAll ? C.accent + "40" : C.border}` }}>{showAll ? "選考中のみ" : "全件表示"}</button>
     </div>
     <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 16, minHeight: 400 }}>
-    {KANBAN_COLUMNS.map(col => {
+    {columns.map(col => {
       const items = filtered.filter(c => col.statuses.includes(c.status));
       return <div key={col.key} onDragOver={e => e.preventDefault()} onDrop={() => { if (dragId) { onStatusChange(dragId, col.statuses[0]); setDragId(null); } }}
         style={{ minWidth: 190, flex: "0 0 210px", background: C.bg, borderRadius: 12, padding: 10, border: `1px solid ${C.border}` }}>
@@ -570,27 +595,29 @@ function KanbanView({ candidates, onSelect, onStatusChange }) {
 }
 
 // ─── Interview View ───
-function InterviewView({ candidates, onSelect }) {
+function InterviewView({ candidates, onSelect, use2nd }) {
   const today = new Date().toISOString().slice(0, 10);
   const upcoming = useMemo(() => {
     const r = [];
     candidates.forEach(c => {
       if (c.casualDate && c.casualDate >= today && !c.casualResult) r.push({ ...c, type: "カジュアル", date: c.casualDate, time: c.casualTime, who: c.casualInterviewer });
       if (c.interview1Date && c.interview1Date >= today && !c.interview1Result) r.push({ ...c, type: "一次", date: c.interview1Date, time: c.interview1Time, who: c.interviewer1 });
+      if (use2nd && c.interview2Date && c.interview2Date >= today && !c.interview2Result) r.push({ ...c, type: "二次", date: c.interview2Date, time: c.interview2Time, who: c.interviewer2 });
       if (c.interviewFinalDate && c.interviewFinalDate >= today && !c.interviewFinalResult) r.push({ ...c, type: "最終", date: c.interviewFinalDate, time: c.interviewFinalTime, who: c.interviewerFinal });
     });
     return r.sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
-  }, [candidates, today]);
+  }, [candidates, today, use2nd]);
 
   const past = useMemo(() => {
     const r = [];
     candidates.forEach(c => {
       if (c.casualDate && c.casualResult) r.push({ ...c, type: "カジュアル", date: c.casualDate, result: c.casualResult, note: c.casualNote, passReason: "", rejectReason: "" });
       if (c.interview1Date && c.interview1Result) r.push({ ...c, type: "一次", date: c.interview1Date, result: c.interview1Result, note: c.interview1Note, passReason: c.interview1PassReason, rejectReason: c.interview1RejectReason });
+      if (use2nd && c.interview2Date && c.interview2Result) r.push({ ...c, type: "二次", date: c.interview2Date, result: c.interview2Result, note: c.interview2Note, passReason: c.interview2PassReason, rejectReason: c.interview2RejectReason });
       if (c.interviewFinalDate && c.interviewFinalResult) r.push({ ...c, type: "最終", date: c.interviewFinalDate, result: c.interviewFinalResult, note: c.interviewFinalNote, passReason: c.interviewFinalPassReason, rejectReason: c.interviewFinalRejectReason });
     });
     return r.sort((a, b) => b.date.localeCompare(a.date));
-  }, [candidates]);
+  }, [candidates, use2nd]);
 
   const resultColor = (r) => {
     if (r === "合格" || r === "応募意思あり") return { bg: C.okBg, color: C.ok };
@@ -623,7 +650,7 @@ function InterviewView({ candidates, onSelect }) {
 }
 
 // ─── Analytics ───
-function AnalyticsView({ candidates }) {
+function AnalyticsView({ candidates, use2nd }) {
   const [dt, setDt] = useState("funnel");
   const [funnelDetail, setFunnelDetail] = useState(null);
 
@@ -631,11 +658,12 @@ function AnalyticsView({ candidates }) {
     "カジュアル：調整中": 1, "カジュアル：日程確定": 1, "カジュアル：完了": 2,
     "カジュアル：辞退": 1, "カジュアル：見送り": 1,
     "書類選考中": 3, "書類お見送り": 3, "書類辞退": 3,
-    "一次：調整中": 4, "一次：日程確定": 4, "一次：合格": 5, "一次：不合格": 4, "一次辞退": 4,
-    "適性検査中": 6, "適性検査辞退": 6,
-    "最終：調整中": 7, "最終：日程確定": 7, "最終：合格": 8, "最終：不合格": 7, "最終辞退": 7,
-    "内定：オファー面談": 10, "内定：承諾": 11, "内定：辞退": 10,
-    "入社済み": 12,
+    "一次：調整中": 4, "一次：日程確定": 4, "一次：合格": 5, "一次：不合格": 4, "一次：保留": 4, "一次辞退": 4,
+    "二次：調整中": 6, "二次：日程確定": 6, "二次：合格": 7, "二次：不合格": 6, "二次辞退": 6,
+    "適性検査中": 8, "適性検査辞退": 8,
+    "最終：調整中": 9, "最終：日程確定": 9, "最終：合格": 10, "最終：不合格": 9, "最終：保留": 9, "最終辞退": 9,
+    "内定：オファー面談": 12, "内定：承諾": 13, "内定：辞退": 12, "内定：保留": 12,
+    "入社済み": 14,
   };
   const stg = (c) => STAGE[c.status] || 0;
   const showFunnel = useCallback((label, filterFn) => {
@@ -651,31 +679,25 @@ function AnalyticsView({ candidates }) {
     //   例: 「内定：辞退」→ 書類通過○、一次通過○、適性検査通過○、最終通過○、内定○
     //
     //   各ステップの通過ステージ:
-    //     書類通過 = ステージ4以上（一次の調整に入った = 書類を通過した）
-    //     一次通過 = ステージ6以上（適性検査 or 一次合格記録あり）
-    //     最終通過 = ステージ9以上（内定フェーズ or 最終合格記録あり）
-    //     内定     = ステージ10以上
+    //     書類通過 = ステージ4以上
+    //     一次通過 = ステージ5以上 or 一次合格
+    //     二次通過 = ステージ7以上 or 二次合格
+    //     最終通過 = ステージ10以上 or 最終合格
+    //     内定     = ステージ12以上
     // ═══════════════════════════════════════════════════════════
 
     const stage = (c) => STAGE[c.status] || 0;
 
-    // 書類通過: ステージ4以上、または一次面接のデータがある（面接していれば書類は通過済み）
     const isDocPass = (c) => stage(c) >= 4 || !!c.interview1Date || !!c.interview1Result;
-    // 一次通過: ステージ5以上 or 一次合格の記録
     const is1Pass = (c) => stage(c) >= 5 || c.interview1Result === "合格";
-    // 最終通過: ステージ8以上 or 最終合格の記録
-    const isFPass = (c) => stage(c) >= 8 || c.interviewFinalResult === "合格";
-    // 承諾: ステージ11以上
-    const isAccepted = (c) => stage(c) >= 11;
-    // 辞退判定
-    const ALL_DECLINE = ["カジュアル：辞退", "書類辞退", "一次辞退", "適性検査辞退", "最終辞退", "内定：辞退"];
+    const is2Pass = (c) => stage(c) >= 7 || c.interview2Result === "合格";
+    const isFPass = (c) => stage(c) >= 10 || c.interviewFinalResult === "合格";
+    const isAccepted = (c) => stage(c) >= 13;
+    const ALL_DECLINE = ["カジュアル：辞退", "書類辞退", "一次辞退", "二次辞退", "適性検査辞退", "最終辞退", "内定：辞退"];
     const isDecline = (c) => ALL_DECLINE.includes(c.status);
 
-    // ═══ 選考フロー ═══
-    // 応募 → 書類通過 → 一次実施 → 一次通過 → 最終実施 → 最終通過（＝内定）→ 承諾・入社
-    //
-    // 「最終面接通過 ＝ 内定」なので、最終通過と内定は同じ数。
-    // 内定辞退者も「内定は出した」のでカウントに含む。
+    // ═══ 選考フロー（累積型ファネル）═══
+    // 応募 → 書類通過 → 一次実施 → 一次通過 → [二次実施 → 二次通過] → 最終実施 → 最終通過（＝内定）→ 承諾・入社
 
     const total = candidates.length;
     const casual = candidates.filter(c => c.status?.startsWith("カジュアル")).length;
@@ -684,10 +706,14 @@ function AnalyticsView({ candidates }) {
     const is1Done = (c) => stage(c) >= 4 || !!c.interview1Date || !!c.interview1Result;
     const i1D = candidates.filter(is1Done).length;
     const i1P = candidates.filter(is1Pass).length;
-    // 最終面接実施（累積）: ステージ7以上 or 最終面接データあり
-    const isFDone = (c) => stage(c) >= 7 || !!c.interviewFinalDate || !!c.interviewFinalResult;
+    // 二次面接実施（累積）: ステージ6以上 or 二次面接データあり
+    const is2Done = (c) => stage(c) >= 6 || !!c.interview2Date || !!c.interview2Result;
+    const i2D = candidates.filter(is2Done).length;
+    const i2P = candidates.filter(is2Pass).length;
+    // 最終面接実施（累積）: ステージ9以上 or 最終面接データあり
+    const isFDone = (c) => stage(c) >= 9 || !!c.interviewFinalDate || !!c.interviewFinalResult;
     const iFD = candidates.filter(isFDone).length;
-    // 最終通過＝内定（同じ数）
+    // 最終通過＝内定
     const iFP = candidates.filter(isFPass).length;
     // 承諾・入社
     const accepted = candidates.filter(isAccepted).length;
@@ -756,7 +782,7 @@ function AnalyticsView({ candidates }) {
     });
     const inProc = candidates.filter(c => !CLOSED_STATUSES.includes(c.status));
 
-    return { total, casual, docP, i1D, i1P, iFD, iFP, accepted, entered, offerDec, allDec, bySrc, byPos, decList, inProc, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons, passReasons, withdrawReasons, withdrawTimings };
+    return { total, casual, docP, i1D, i1P, i2D, i2P, iFD, iFP, accepted, entered, offerDec, allDec, bySrc, byPos, decList, inProc, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons, passReasons, withdrawReasons, withdrawTimings };
   }, [candidates]);
 
   const dtabs = [{ key: "funnel", label: "ファネル", icon: "▼" }, { key: "speed", label: "選考スピード", icon: "⏱" }, { key: "channel", label: "チャネル別", icon: "◈" }, { key: "decline", label: "辞退分析", icon: "⚠" }, { key: "position", label: "職種別", icon: "◉" }, { key: "pipeline", label: "パイプライン", icon: "◎" }];
@@ -783,9 +809,11 @@ function AnalyticsView({ candidates }) {
       <FunnelBar label="書類通過" value={s.docP} maxVal={s.total} rate={s.total > 0 ? Math.round((s.docP / s.total) * 100) : 0} cumRate={s.total > 0 ? ((s.docP / s.total) * 100).toFixed(1) : 0} color={C.accent} onClick={() => showFunnel("書類通過", c => stg(c) >= 4 || !!c.interview1Date || !!c.interview1Result)} />
       <FunnelBar label="一次面接実施" value={s.i1D} maxVal={s.total} rate={s.docP > 0 ? Math.round((s.i1D / s.docP) * 100) : 0} cumRate={s.total > 0 ? ((s.i1D / s.total) * 100).toFixed(1) : 0} color="#f59e0b" onClick={() => showFunnel("一次面接実施", c => stg(c) >= 4 || !!c.interview1Date || !!c.interview1Result)} />
       <FunnelBar label="一次面接通過" value={s.i1P} maxVal={s.total} rate={s.i1D > 0 ? Math.round((s.i1P / s.i1D) * 100) : 0} cumRate={s.total > 0 ? ((s.i1P / s.total) * 100).toFixed(1) : 0} color="#8b5cf6" onClick={() => showFunnel("一次面接通過", c => stg(c) >= 5 || c.interview1Result === "合格")} />
-      <FunnelBar label="最終面接実施" value={s.iFD} maxVal={s.total} rate={s.i1P > 0 ? Math.round((s.iFD / s.i1P) * 100) : 0} cumRate={s.total > 0 ? ((s.iFD / s.total) * 100).toFixed(1) : 0} color="#06b6d4" onClick={() => showFunnel("最終面接実施", c => stg(c) >= 7 || !!c.interviewFinalDate || !!c.interviewFinalResult)} />
-      <FunnelBar label="内定（最終通過）" value={s.iFP} maxVal={s.total} rate={s.iFD > 0 ? Math.round((s.iFP / s.iFD) * 100) : 0} cumRate={s.total > 0 ? ((s.iFP / s.total) * 100).toFixed(1) : 0} color={C.accentL} sub={s.offerDec > 0 ? `うち内定辞退 ${s.offerDec}名` : ""} onClick={() => showFunnel("内定（最終通過）", c => stg(c) >= 8 || c.interviewFinalResult === "合格")} />
-      <FunnelBar label="承諾・入社" value={s.accepted + s.entered} maxVal={s.total} rate={s.iFP > 0 ? Math.round(((s.accepted + s.entered) / s.iFP) * 100) : 0} cumRate={s.total > 0 ? (((s.accepted + s.entered) / s.total) * 100).toFixed(1) : 0} color={C.ok} onClick={() => showFunnel("承諾・入社", c => stg(c) >= 11 || c.status === "入社済み")} />
+      {use2nd && <FunnelBar label="二次面接実施" value={s.i2D} maxVal={s.total} rate={s.i1P > 0 ? Math.round((s.i2D / s.i1P) * 100) : 0} cumRate={s.total > 0 ? ((s.i2D / s.total) * 100).toFixed(1) : 0} color="#e879f9" onClick={() => showFunnel("二次面接実施", c => stg(c) >= 6 || !!c.interview2Date || !!c.interview2Result)} />}
+      {use2nd && <FunnelBar label="二次面接通過" value={s.i2P} maxVal={s.total} rate={s.i2D > 0 ? Math.round((s.i2P / s.i2D) * 100) : 0} cumRate={s.total > 0 ? ((s.i2P / s.total) * 100).toFixed(1) : 0} color="#c084fc" onClick={() => showFunnel("二次面接通過", c => stg(c) >= 7 || c.interview2Result === "合格")} />}
+      <FunnelBar label="最終面接実施" value={s.iFD} maxVal={s.total} rate={(use2nd ? s.i2P : s.i1P) > 0 ? Math.round((s.iFD / (use2nd ? s.i2P : s.i1P)) * 100) : 0} cumRate={s.total > 0 ? ((s.iFD / s.total) * 100).toFixed(1) : 0} color="#06b6d4" onClick={() => showFunnel("最終面接実施", c => stg(c) >= 9 || !!c.interviewFinalDate || !!c.interviewFinalResult)} />
+      <FunnelBar label="内定（最終通過）" value={s.iFP} maxVal={s.total} rate={s.iFD > 0 ? Math.round((s.iFP / s.iFD) * 100) : 0} cumRate={s.total > 0 ? ((s.iFP / s.total) * 100).toFixed(1) : 0} color={C.accentL} sub={s.offerDec > 0 ? `うち内定辞退 ${s.offerDec}名` : ""} onClick={() => showFunnel("内定（最終通過）", c => stg(c) >= 10 || c.interviewFinalResult === "合格")} />
+      <FunnelBar label="承諾・入社" value={s.accepted + s.entered} maxVal={s.total} rate={s.iFP > 0 ? Math.round(((s.accepted + s.entered) / s.iFP) * 100) : 0} cumRate={s.total > 0 ? (((s.accepted + s.entered) / s.total) * 100).toFixed(1) : 0} color={C.ok} onClick={() => showFunnel("承諾・入社", c => stg(c) >= 13 || c.status === "入社済み")} />
       {s.total > 0 && <div style={{ marginTop: 16, padding: "14px 16px", background: C.accent + "10", borderRadius: 10, border: `1px solid ${C.accent}25` }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: C.accentL, marginBottom: 8 }}>採用効率</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
@@ -948,17 +976,25 @@ function mapStatus(raw) {
   if (s.includes("カジュアル") && s.includes("完了")) return "カジュアル：完了";
   if (s.includes("カジュアル") && s.includes("確定")) return "カジュアル：日程確定";
   if (s.includes("カジュアル")) return "カジュアル：調整中";
+  if (s.includes("不合格") && s.includes("二次")) return "二次：不合格";
   if (s.includes("不合格") && s.includes("一次")) return "一次：不合格";
   if (s.includes("不合格") && s.includes("最終")) return "最終：不合格";
+  if (s.includes("合格") && s.includes("二次")) return "二次：合格";
   if (s.includes("合格") && s.includes("一次")) return "一次：合格";
   if (s.includes("合格") && s.includes("最終")) return "最終：合格";
+  if (s.includes("日程確定") && s.includes("二次")) return "二次：日程確定";
   if (s.includes("日程確定") && s.includes("一次")) return "一次：日程確定";
   if (s.includes("日程確定") && s.includes("最終")) return "最終：日程確定";
+  if (s.includes("調整") && s.includes("二次")) return "二次：調整中";
   if (s.includes("調整") && s.includes("一次")) return "一次：調整中";
   if (s.includes("調整") && s.includes("最終")) return "最終：調整中";
+  if (s.includes("保留") && s.includes("一次")) return "一次：保留";
+  if (s.includes("保留") && s.includes("最終")) return "最終：保留";
+  if (s.includes("保留") && s.includes("内定")) return "内定：保留";
   if (s.includes("辞退") && s.includes("内定")) return "内定：辞退";
   if (s.includes("辞退") && s.includes("最終")) return "最終辞退";
   if (s.includes("辞退") && s.includes("適性")) return "適性検査辞退";
+  if (s.includes("辞退") && s.includes("二次")) return "二次辞退";
   if (s.includes("辞退") && s.includes("一次")) return "一次辞退";
   if (s.includes("辞退") && s.includes("書類")) return "書類辞退";
   if (s.includes("辞退")) return "書類辞退";
@@ -1078,6 +1114,7 @@ function App() {
   const [pw, setPw] = useState("");
   const [pwErr, setPwErr] = useState("");
   const [saving, setSaving] = useState(false);
+  const [use2nd, setUse2nd] = useState(() => localStorage.getItem("nv-use2nd") === "true");
 
   useEffect(() => {
     if (!authed) return; setLoading(true);
@@ -1126,17 +1163,22 @@ function App() {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: 1400, margin: "0 auto", height: 52 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}><div style={{ width: 28, height: 28, borderRadius: 7, background: `linear-gradient(135deg, ${C.accent}, ${C.accentD})`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>⚡</div><span style={{ fontWeight: 800, fontSize: 14, color: C.text }}>NV採用管理</span>{saving && <span style={{ fontSize: 9, color: C.warn, fontWeight: 600 }}>保存中…</span>}</div>
         <div style={{ display: "flex", gap: 2 }}>{tabs.map(t => <button key={t.key} onClick={() => setTab(t.key)} style={{ ...btnS, background: tab === t.key ? C.accent + "18" : "transparent", color: tab === t.key ? C.accentL : C.textSub, padding: "7px 12px", fontSize: 11, borderBottom: tab === t.key ? `2px solid ${C.accent}` : "2px solid transparent" }}>{t.icon} {t.label}</button>)}</div>
-        <button onClick={() => setAuthed(false)} style={{ ...btnS, background: "transparent", color: C.textDim, fontSize: 10 }}>ログアウト</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 10, color: C.textSub }}>
+            <input type="checkbox" checked={use2nd} onChange={e => { setUse2nd(e.target.checked); localStorage.setItem("nv-use2nd", e.target.checked); }} style={{ accentColor: C.accent }} />二次面接あり
+          </label>
+          <button onClick={() => setAuthed(false)} style={{ ...btnS, background: "transparent", color: C.textDim, fontSize: 10 }}>ログアウト</button>
+        </div>
       </div>
     </div>
     <div style={{ maxWidth: 1400, margin: "0 auto", padding: "20px 20px 60px" }}>
       {tab === "list" && <ListView candidates={candidates} onSelect={openEdit} onAdd={openNew} onImport={() => setImportOpen(true)} onExport={handleExport} onBulkStatus={handleBulkStatus} onBulkDelete={handleBulkDelete} />}
-      {tab === "kanban" && <KanbanView candidates={candidates} onSelect={openEdit} onStatusChange={handleSC} />}
-      {tab === "interview" && <InterviewView candidates={candidates} onSelect={openEdit} />}
-      {tab === "analytics" && <AnalyticsView candidates={candidates} />}
+      {tab === "kanban" && <KanbanView candidates={candidates} onSelect={openEdit} onStatusChange={handleSC} use2nd={use2nd} />}
+      {tab === "interview" && <InterviewView candidates={candidates} onSelect={openEdit} use2nd={use2nd} />}
+      {tab === "analytics" && <AnalyticsView candidates={candidates} use2nd={use2nd} />}
     </div>
     <Modal open={!!modal} onClose={() => { setModal(null); setEditC(null); }} title={modal?.mode === "new" ? "候補者を追加" : `${editC?.name || ""} を編集`}>
-      {editC && <CandidateForm candidate={editC} onChange={setEditC} onSave={handleSave} onDelete={handleDel} isNew={modal?.mode === "new"} />}
+      {editC && <CandidateForm candidate={editC} onChange={setEditC} onSave={handleSave} onDelete={handleDel} isNew={modal?.mode === "new"} use2nd={use2nd} />}
     </Modal>
     <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onImport={handleImport} />
   </div>;
