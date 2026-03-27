@@ -315,13 +315,13 @@ function KPICard({ label, value, sub, color = C.accent, icon }) {
   </div>;
 }
 
-function FunnelBar({ label, value, maxVal, rate, cumRate, color, sub }) {
+function FunnelBar({ label, value, maxVal, rate, cumRate, color, sub, onClick }) {
   const pct = maxVal > 0 ? (value / maxVal) * 100 : 0;
   return <div style={{ marginBottom: 14 }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
       <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{label}</span>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-        <span style={{ fontSize: 20, fontWeight: 800, color }}>{value}</span>
+        <span onClick={onClick} style={{ fontSize: 20, fontWeight: 800, color, cursor: onClick ? "pointer" : "default", textDecoration: onClick ? "underline" : "none", textDecorationStyle: "dotted", textUnderlineOffset: 3 }}>{value}</span>
         {rate !== undefined && <span style={{ fontSize: 11, color: C.textSub }}>通過率 {rate}%</span>}
         {cumRate !== undefined && <span style={{ fontSize: 11, color: C.warn, fontWeight: 600 }}>全体 {cumRate}%</span>}
       </div>
@@ -625,6 +625,22 @@ function InterviewView({ candidates, onSelect }) {
 // ─── Analytics ───
 function AnalyticsView({ candidates }) {
   const [dt, setDt] = useState("funnel");
+  const [funnelDetail, setFunnelDetail] = useState(null);
+
+  const STAGE = {
+    "カジュアル：調整中": 1, "カジュアル：日程確定": 1, "カジュアル：完了": 2,
+    "カジュアル：辞退": 1, "カジュアル：見送り": 1,
+    "書類選考中": 3, "書類お見送り": 3, "書類辞退": 3,
+    "一次：調整中": 4, "一次：日程確定": 4, "一次：合格": 5, "一次：不合格": 4, "一次辞退": 4,
+    "適性検査中": 6, "適性検査辞退": 6,
+    "最終：調整中": 7, "最終：日程確定": 7, "最終：合格": 8, "最終：不合格": 7, "最終辞退": 7,
+    "内定：オファー面談": 10, "内定：承諾": 11, "内定：辞退": 10,
+    "入社済み": 12,
+  };
+  const stg = (c) => STAGE[c.status] || 0;
+  const showFunnel = useCallback((label, filterFn) => {
+    setFunnelDetail({ label, list: candidates.filter(filterFn) });
+  }, [candidates]);
 
   const s = useMemo(() => {
     // ═══════════════════════════════════════════════════════════
@@ -640,17 +656,6 @@ function AnalyticsView({ candidates }) {
     //     最終通過 = ステージ9以上（内定フェーズ or 最終合格記録あり）
     //     内定     = ステージ10以上
     // ═══════════════════════════════════════════════════════════
-
-    const STAGE = {
-      "カジュアル：調整中": 1, "カジュアル：日程確定": 1, "カジュアル：完了": 2,
-      "カジュアル：辞退": 1, "カジュアル：見送り": 1,
-      "書類選考中": 3, "書類お見送り": 3, "書類辞退": 3,
-      "一次：調整中": 4, "一次：日程確定": 4, "一次：合格": 5, "一次：不合格": 4, "一次辞退": 4,
-      "適性検査中": 6, "適性検査辞退": 6,
-      "最終：調整中": 7, "最終：日程確定": 7, "最終：合格": 8, "最終：不合格": 7, "最終辞退": 7,
-      "内定：オファー面談": 10, "内定：承諾": 11, "内定：辞退": 10,
-      "入社済み": 12,
-    };
 
     const stage = (c) => STAGE[c.status] || 0;
 
@@ -772,13 +777,13 @@ function AnalyticsView({ candidates }) {
 
     {dt === "funnel" && <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
       <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 20px" }}>選考ファネル</h3>
-      <FunnelBar label="応募" value={s.total} maxVal={s.total} color={C.info} />
-      <FunnelBar label="書類通過" value={s.docP} maxVal={s.total} rate={s.total > 0 ? Math.round((s.docP / s.total) * 100) : 0} cumRate={s.total > 0 ? ((s.docP / s.total) * 100).toFixed(1) : 0} color={C.accent} />
-      <FunnelBar label="一次面接実施" value={s.i1D} maxVal={s.total} rate={s.docP > 0 ? Math.round((s.i1D / s.docP) * 100) : 0} cumRate={s.total > 0 ? ((s.i1D / s.total) * 100).toFixed(1) : 0} color="#f59e0b" />
-      <FunnelBar label="一次面接通過" value={s.i1P} maxVal={s.total} rate={s.i1D > 0 ? Math.round((s.i1P / s.i1D) * 100) : 0} cumRate={s.total > 0 ? ((s.i1P / s.total) * 100).toFixed(1) : 0} color="#8b5cf6" />
-      <FunnelBar label="最終面接実施" value={s.iFD} maxVal={s.total} rate={s.i1P > 0 ? Math.round((s.iFD / s.i1P) * 100) : 0} cumRate={s.total > 0 ? ((s.iFD / s.total) * 100).toFixed(1) : 0} color="#06b6d4" />
-      <FunnelBar label="内定（最終通過）" value={s.iFP} maxVal={s.total} rate={s.iFD > 0 ? Math.round((s.iFP / s.iFD) * 100) : 0} cumRate={s.total > 0 ? ((s.iFP / s.total) * 100).toFixed(1) : 0} color={C.accentL} sub={s.offerDec > 0 ? `うち内定辞退 ${s.offerDec}名` : ""} />
-      <FunnelBar label="承諾・入社" value={s.accepted + s.entered} maxVal={s.total} rate={s.iFP > 0 ? Math.round(((s.accepted + s.entered) / s.iFP) * 100) : 0} cumRate={s.total > 0 ? (((s.accepted + s.entered) / s.total) * 100).toFixed(1) : 0} color={C.ok} />
+      <FunnelBar label="応募" value={s.total} maxVal={s.total} color={C.info} onClick={() => showFunnel("応募", () => true)} />
+      <FunnelBar label="書類通過" value={s.docP} maxVal={s.total} rate={s.total > 0 ? Math.round((s.docP / s.total) * 100) : 0} cumRate={s.total > 0 ? ((s.docP / s.total) * 100).toFixed(1) : 0} color={C.accent} onClick={() => showFunnel("書類通過", c => stg(c) >= 4 || !!c.interview1Date || !!c.interview1Result)} />
+      <FunnelBar label="一次面接実施" value={s.i1D} maxVal={s.total} rate={s.docP > 0 ? Math.round((s.i1D / s.docP) * 100) : 0} cumRate={s.total > 0 ? ((s.i1D / s.total) * 100).toFixed(1) : 0} color="#f59e0b" onClick={() => showFunnel("一次面接実施", c => c.interview1Date || c.interview1Result)} />
+      <FunnelBar label="一次面接通過" value={s.i1P} maxVal={s.total} rate={s.i1D > 0 ? Math.round((s.i1P / s.i1D) * 100) : 0} cumRate={s.total > 0 ? ((s.i1P / s.total) * 100).toFixed(1) : 0} color="#8b5cf6" onClick={() => showFunnel("一次面接通過", c => stg(c) >= 5 || c.interview1Result === "合格")} />
+      <FunnelBar label="最終面接実施" value={s.iFD} maxVal={s.total} rate={s.i1P > 0 ? Math.round((s.iFD / s.i1P) * 100) : 0} cumRate={s.total > 0 ? ((s.iFD / s.total) * 100).toFixed(1) : 0} color="#06b6d4" onClick={() => showFunnel("最終面接実施", c => c.interviewFinalResult)} />
+      <FunnelBar label="内定（最終通過）" value={s.iFP} maxVal={s.total} rate={s.iFD > 0 ? Math.round((s.iFP / s.iFD) * 100) : 0} cumRate={s.total > 0 ? ((s.iFP / s.total) * 100).toFixed(1) : 0} color={C.accentL} sub={s.offerDec > 0 ? `うち内定辞退 ${s.offerDec}名` : ""} onClick={() => showFunnel("内定（最終通過）", c => stg(c) >= 8 || c.interviewFinalResult === "合格")} />
+      <FunnelBar label="承諾・入社" value={s.accepted + s.entered} maxVal={s.total} rate={s.iFP > 0 ? Math.round(((s.accepted + s.entered) / s.iFP) * 100) : 0} cumRate={s.total > 0 ? (((s.accepted + s.entered) / s.total) * 100).toFixed(1) : 0} color={C.ok} onClick={() => showFunnel("承諾・入社", c => stg(c) >= 11 || c.status === "入社済み")} />
       {s.total > 0 && <div style={{ marginTop: 16, padding: "14px 16px", background: C.accent + "10", borderRadius: 10, border: `1px solid ${C.accent}25` }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: C.accentL, marginBottom: 8 }}>採用効率</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
@@ -905,6 +910,18 @@ function AnalyticsView({ candidates }) {
           <span style={{ color: C.text, fontWeight: 600 }}>{c.name}</span><span style={{ color: C.textSub }}>{c.position?.slice(0, 10)}</span><Badge status={c.status} /><span style={{ color: C.textSub }}>{c.source}</span><DaysChip days={daysStalled(c)} />
         </div>)}</div>}
     </div>}
+
+    <Modal open={!!funnelDetail} onClose={() => setFunnelDetail(null)} title={funnelDetail ? `${funnelDetail.label}（${funnelDetail.list.length}名）` : ""} width={480}>
+      {funnelDetail && (funnelDetail.list.length === 0
+        ? <div style={{ textAlign: "center", padding: 24, color: C.textDim }}>該当者なし</div>
+        : <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>{["氏名", "ステータス"].map(h => <th key={h} style={{ textAlign: "left", padding: "6px 8px", fontSize: 10, color: C.textDim, fontWeight: 700, borderBottom: `1px solid ${C.border}` }}>{h}</th>)}</tr></thead>
+            <tbody>{funnelDetail.list.map(c => <tr key={c.id} style={{ borderBottom: `1px solid ${C.border}22` }}>
+              <td style={{ padding: "8px 8px", fontSize: 13, color: C.text, fontWeight: 600 }}>{c.name}</td>
+              <td style={{ padding: "8px 8px" }}><Badge status={c.status} /></td>
+            </tr>)}</tbody>
+          </table>)}
+    </Modal>
   </div>;
 }
 
