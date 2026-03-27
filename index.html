@@ -25,6 +25,7 @@ const STORAGE_KEY = "nv-recruit-data";
 const GAS_URL = "https://script.google.com/macros/s/AKfycbyBnmVegbUAJDRmmk8H4CXNi5L1vmZL8DjijFfRVlJ1Mmmkmh9xp9vWRU2YWOzij3SG/exec";
 
 const STATUS_LIST = [
+  "カジュアル：書類確認", "カジュアル：書類見送り",
   "カジュアル：調整中", "カジュアル：日程確定", "カジュアル：完了", "カジュアル：辞退", "カジュアル：見送り",
   "書類選考中", "書類お見送り", "書類辞退",
   "一次：調整中", "一次：日程確定", "一次：合格", "一次：不合格", "一次：保留", "一次辞退",
@@ -37,6 +38,7 @@ const STATUS_LIST = [
 const STATUS_2ND = ["二次：調整中", "二次：日程確定", "二次：合格", "二次：不合格", "二次辞退"];
 
 const KANBAN_COLUMNS_ALL = [
+  { key: "カジュアル書類", statuses: ["カジュアル：書類確認", "カジュアル：書類見送り"], color: "#c4b5fd" },
   { key: "カジュアル面談", statuses: ["カジュアル：調整中", "カジュアル：日程確定", "カジュアル：完了", "カジュアル：辞退", "カジュアル：見送り"], color: "#a78bfa" },
   { key: "書類選考", statuses: ["書類選考中", "書類お見送り", "書類辞退"], color: "#3b82f6" },
   { key: "一次面接", statuses: ["一次：調整中", "一次：日程確定", "一次辞退"], color: "#f59e0b" },
@@ -168,6 +170,7 @@ const C = {
 
 const statusColor = (s) => {
   const m = {
+    "カジュアル：書類確認": ["#c4b5fd", "#c4b5fd14"], "カジュアル：書類見送り": ["#ef4444", "#ef444414"],
     "カジュアル：調整中": ["#a78bfa", "#a78bfa14"], "カジュアル：日程確定": ["#8b5cf6", "#8b5cf614"],
     "カジュアル：完了": ["#7c3aed", "#7c3aed14"], "カジュアル：辞退": ["#ef4444", "#ef444414"],
     "カジュアル：見送り": ["#ef4444", "#ef444414"],
@@ -455,7 +458,7 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew, use2nd
 }
 
 // ─── List View ───
-const CLOSED_STATUSES = ["書類お見送り", "書類辞退", "一次：不合格", "一次辞退", "二次：不合格", "二次辞退", "適性検査辞退", "最終：不合格", "最終辞退", "内定：辞退", "入社済み", "カジュアル：辞退", "カジュアル：見送り"];
+const CLOSED_STATUSES = ["カジュアル：書類見送り", "書類お見送り", "書類辞退", "一次：不合格", "一次辞退", "二次：不合格", "二次辞退", "適性検査辞退", "最終：不合格", "最終辞退", "内定：辞退", "入社済み", "カジュアル：辞退", "カジュアル：見送り"];
 
 function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatus, onBulkDelete }) {
   const [q, setQ] = useState(""); const [fStMode, setFStMode] = useState("active"); const [fStSet, setFStSet] = useState(new Set()); const [fPos, setFPos] = useState(""); const [fSrc, setFSrc] = useState("");
@@ -658,6 +661,7 @@ function AnalyticsView({ candidates, use2nd }) {
   const [funnelDetail, setFunnelDetail] = useState(null);
 
   const STAGE = {
+    "カジュアル：書類確認": 0, "カジュアル：書類見送り": 0,
     "カジュアル：調整中": 1, "カジュアル：日程確定": 1, "カジュアル：完了": 2,
     "カジュアル：辞退": 1, "カジュアル：見送り": 1,
     "書類選考中": 3, "書類お見送り": 3, "書類辞退": 3,
@@ -974,6 +978,8 @@ function mapStatus(raw) {
   if (!raw) return "書類選考中";
   const s = raw.trim();
   const exact = STATUS_LIST.find(st => st === s); if (exact) return exact;
+  if (s.includes("カジュアル") && s.includes("書類") && s.includes("見送")) return "カジュアル：書類見送り";
+  if (s.includes("カジュアル") && s.includes("書類")) return "カジュアル：書類確認";
   if (s.includes("カジュアル") && s.includes("辞退")) return "カジュアル：辞退";
   if (s.includes("カジュアル") && s.includes("見送")) return "カジュアル：見送り";
   if (s.includes("カジュアル") && s.includes("完了")) return "カジュアル：完了";
