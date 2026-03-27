@@ -406,16 +406,29 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew }) {
 const CLOSED_STATUSES = ["書類お見送り", "書類辞退", "一次：不合格", "一次辞退", "適性検査辞退", "最終：不合格", "最終辞退", "内定：辞退", "入社済み", "カジュアル：辞退", "カジュアル：見送り"];
 
 function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatus, onBulkDelete }) {
-  const [q, setQ] = useState(""); const [fSt, setFSt] = useState("__active__"); const [fPos, setFPos] = useState(""); const [fSrc, setFSrc] = useState("");
+  const [q, setQ] = useState(""); const [fStMode, setFStMode] = useState("active"); const [fStSet, setFStSet] = useState(new Set()); const [fPos, setFPos] = useState(""); const [fSrc, setFSrc] = useState("");
   const [selected, setSelected] = useState(new Set());
   const [bulkStatus, setBulkStatus] = useState("");
+  const [stPanelOpen, setStPanelOpen] = useState(false);
+  const stPanelRef = useRef(null);
+  const stBtnRef = useRef(null);
+
+  useEffect(() => {
+    if (!stPanelOpen) return;
+    const handleClick = (e) => { if (stPanelRef.current && !stPanelRef.current.contains(e.target) && stBtnRef.current && !stBtnRef.current.contains(e.target)) setStPanelOpen(false); };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [stPanelOpen]);
+
+  const toggleSt = (s) => { const n = new Set(fStSet); if (n.has(s)) n.delete(s); else n.add(s); setFStSet(n); setFStMode("custom"); };
+  const stLabel = fStMode === "all" ? "全件表示" : fStMode === "active" ? "選考中のみ" : `${fStSet.size}件選択中`;
 
   const filtered = useMemo(() => candidates.filter(c => {
     if (q && !c.name.includes(q) && !c.source.includes(q) && !c.memo?.includes(q)) return false;
-    if (fSt === "__active__" && CLOSED_STATUSES.includes(c.status)) return false;
-    if (fSt && fSt !== "__active__" && c.status !== fSt) return false;
+    if (fStMode === "active" && CLOSED_STATUSES.includes(c.status)) return false;
+    if (fStMode === "custom" && fStSet.size > 0 && !fStSet.has(c.status)) return false;
     return (!fPos || c.position === fPos) && (!fSrc || c.source === fSrc);
-  }), [candidates, q, fSt, fPos, fSrc]);
+  }), [candidates, q, fStMode, fStSet, fPos, fSrc]);
 
   const allSel = filtered.length > 0 && filtered.every(c => selected.has(c.id));
   const toggleAll = () => { if (allSel) setSelected(new Set()); else setSelected(new Set(filtered.map(c => c.id))); };
@@ -424,7 +437,22 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatu
   return <div>
     <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
       <input placeholder="検索（氏名・経由・現職・備考）" value={q} onChange={e => setQ(e.target.value)} style={{ ...inp, width: 220 }} />
-      <select value={fSt} onChange={e => setFSt(e.target.value)} style={{ ...inp, width: 160, appearance: "auto" }}><option value="">全件表示</option><option value="__active__">選考中のみ</option>{STATUS_LIST.map(s => <option key={s}>{s}</option>)}</select>
+      <div style={{ position: "relative" }}>
+        <button ref={stBtnRef} onClick={() => setStPanelOpen(p => !p)} style={{ ...inp, width: 170, textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", background: fStMode === "custom" && fStSet.size > 0 ? C.accent + "18" : C.surface, borderColor: fStMode === "custom" && fStSet.size > 0 ? C.accent + "60" : C.border }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{stLabel}</span>
+          <span style={{ fontSize: 9, marginLeft: 4, color: C.textDim }}>{stPanelOpen ? "▲" : "▼"}</span>
+        </button>
+        {stPanelOpen && <div ref={stPanelRef} style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 200, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "12px 14px", width: 360, maxHeight: 400, overflow: "auto", boxShadow: "0 16px 40px rgba(0,0,0,.45)" }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+            <button onClick={() => { setFStMode("all"); setFStSet(new Set()); }} style={{ ...btnS, padding: "4px 10px", fontSize: 10, background: fStMode === "all" ? C.accent : C.surfaceAlt, color: fStMode === "all" ? "#fff" : C.textSub }}>全件表示</button>
+            <button onClick={() => { setFStMode("active"); setFStSet(new Set()); }} style={{ ...btnS, padding: "4px 10px", fontSize: 10, background: fStMode === "active" ? C.accent : C.surfaceAlt, color: fStMode === "active" ? "#fff" : C.textSub }}>選考中のみ</button>
+            {fStMode === "custom" && fStSet.size > 0 && <button onClick={() => { setFStSet(new Set()); setFStMode("all"); }} style={{ ...btnS, padding: "4px 10px", fontSize: 10, background: C.badBg, color: C.bad }}>クリア</button>}
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            {STATUS_LIST.map(s => { const [sc, sbg] = statusColor(s); const on = fStSet.has(s); return <button key={s} onClick={() => toggleSt(s)} style={{ ...btnS, padding: "3px 9px", fontSize: 10, borderRadius: 14, background: on ? sbg : C.surfaceAlt, color: on ? sc : C.textDim, border: on ? `1px solid ${sc}40` : `1px solid transparent`, fontWeight: on ? 700 : 400 }}>{s}</button>; })}
+          </div>
+        </div>}
+      </div>
       <select value={fPos} onChange={e => setFPos(e.target.value)} style={{ ...inp, width: 150, appearance: "auto" }}><option value="">全職種</option>{POSITIONS.map(s => <option key={s}>{s}</option>)}</select>
       <select value={fSrc} onChange={e => setFSrc(e.target.value)} style={{ ...inp, width: 130, appearance: "auto" }}><option value="">全経由</option>{SOURCES.map(s => <option key={s}>{s}</option>)}</select>
       <div style={{ flex: 1 }} />
