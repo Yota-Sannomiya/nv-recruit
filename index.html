@@ -96,16 +96,28 @@ const emptyCandidate = () => ({
 // ─── Utility ───
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 const DATE_FIELDS = ["appliedDate", "statusChangedDate", "casualDate", "interview1Date", "interviewFinalDate", "offerDate", "startDate"];
+const TIME_FIELDS = ["casualTime", "interview1Time", "interviewFinalTime", "offerTime"];
 function normalizeDate(v) {
   if (!v) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
   const d = new Date(v);
   if (isNaN(d)) return v;
+  if (d.getFullYear() <= 1900) return "";
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function normalizeTime(v) {
+  if (!v) return "";
+  if (/^\d{1,2}:\d{2}$/.test(v)) return v;
+  const d = new Date(v);
+  if (!isNaN(d)) return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  const m = String(v).match(/(\d{1,2}):(\d{2})/);
+  if (m) return `${m[1].padStart(2, "0")}:${m[2]}`;
+  return "";
 }
 function normalizeCandidateDates(c) {
   const out = { ...c };
   for (const k of DATE_FIELDS) { if (out[k]) out[k] = normalizeDate(out[k]); }
+  for (const k of TIME_FIELDS) { if (out[k]) out[k] = normalizeTime(out[k]); }
   return out;
 }
 function fmtDate(dateStr) {
