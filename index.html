@@ -678,8 +678,8 @@ function AnalyticsView({ candidates }) {
     // 一次面接実施: 一次面接日 or 合否結果があればカウント
     const i1D = candidates.filter(c => c.interview1Date || c.interview1Result).length;
     const i1P = candidates.filter(is1Pass).length;
-    // 最終面接実施: 最終面接日 or 合否結果があればカウント
-    const iFD = candidates.filter(c => c.interviewFinalDate || c.interviewFinalResult).length;
+    // 最終面接実施: 合否結果が入っている（実施済み）候補者のみカウント
+    const iFD = candidates.filter(c => c.interviewFinalResult).length;
     // 最終通過＝内定（同じ数）
     const iFP = candidates.filter(isFPass).length;
     // 承諾・入社
