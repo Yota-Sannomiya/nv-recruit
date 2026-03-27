@@ -95,9 +95,23 @@ const emptyCandidate = () => ({
 
 // ─── Utility ───
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+const DATE_FIELDS = ["appliedDate", "statusChangedDate", "casualDate", "interview1Date", "interviewFinalDate", "offerDate", "startDate"];
+function normalizeDate(v) {
+  if (!v) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const d = new Date(v);
+  if (isNaN(d)) return v;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function normalizeCandidateDates(c) {
+  const out = { ...c };
+  for (const k of DATE_FIELDS) { if (out[k]) out[k] = normalizeDate(out[k]); }
+  return out;
+}
 function fmtDate(dateStr) {
   if (!dateStr) return "";
-  const d = new Date(dateStr + "T00:00:00");
+  const s = normalizeDate(dateStr);
+  const d = new Date(s + "T00:00:00");
   if (isNaN(d)) return dateStr;
   return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（${WEEKDAYS[d.getDay()]}）`;
 }
@@ -197,7 +211,8 @@ function Section({ title, color = C.accentL, children }) {
 }
 
 // ─── Custom Calendar Picker ───
-const CalendarPicker = React.memo(function CalendarPicker({ value, onChange, label }) {
+const CalendarPicker = React.memo(function CalendarPicker({ value: rawValue, onChange, label }) {
+  const value = useMemo(() => normalizeDate(rawValue), [rawValue]);
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   const today = useMemo(() => new Date(), []);
@@ -1035,7 +1050,7 @@ function App() {
 
   useEffect(() => {
     if (!authed) return; setLoading(true);
-    (async () => { try { const r = await gasGet(pw, "list"); if (r.ok) setCandidates(r.data || []); } catch (e) { console.warn(e); } setLoading(false); })();
+    (async () => { try { const r = await gasGet(pw, "list"); if (r.ok) setCandidates((r.data || []).map(normalizeCandidateDates)); } catch (e) { console.warn(e); } setLoading(false); })();
   }, [authed]);
 
   const saveSingle = useCallback(async (c) => { setSaving(true); try { await gasPost(pw, { action: "save", data: c }); } catch {} setSaving(false); }, [pw]);
