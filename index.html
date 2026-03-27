@@ -529,7 +529,7 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatu
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
         <thead><tr style={{ borderBottom: `2px solid ${C.border}` }}>
           <th style={{ padding: "8px 6px", width: 32 }}><input type="checkbox" checked={allSel} onChange={toggleAll} style={{ accentColor: C.accent, cursor: "pointer" }} /></th>
-          {["氏名", "ステータス", "職種", "経由", "応募日", "滞留", "一次面接", "最終面接", "書類"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 8px", color: C.textDim, fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>)}
+          {["氏名", "ステータス", "職種", "経由", "応募日", "カジュアル", "滞留", "一次面接", "最終面接", "オファー面談", "書類"].map(h => <th key={h} style={{ textAlign: "left", padding: "8px 8px", color: C.textDim, fontSize: 10, fontWeight: 700, whiteSpace: "nowrap" }}>{h}</th>)}
         </tr></thead>
         <tbody>{filtered.map(c => {
           const stalled = daysStalled(c);
@@ -542,9 +542,11 @@ function ListView({ candidates, onSelect, onAdd, onImport, onExport, onBulkStatu
             <td style={{ padding: "8px 8px", color: C.textSub, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{c.position}</td>
             <td style={{ padding: "8px 8px", color: C.textSub, cursor: "pointer" }} onClick={() => onSelect(c)}>{c.source}</td>
             <td style={{ padding: "8px 8px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{fmtDate(c.appliedDate)}</td>
+            <td style={{ padding: "8px 8px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{fmtDateTime(c.casualDate, c.casualTime)}</td>
             <td style={{ padding: "8px 8px", cursor: "pointer" }} onClick={() => onSelect(c)}><DaysChip days={stalled} /></td>
             <td style={{ padding: "8px 8px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{fmtDateTime(c.interview1Date, c.interview1Time)}</td>
             <td style={{ padding: "8px 8px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{fmtDateTime(c.interviewFinalDate, c.interviewFinalTime)}</td>
+            <td style={{ padding: "8px 8px", color: C.textSub, fontSize: 11, whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => onSelect(c)}>{fmtDateTime(c.offerDate, c.offerTime)}</td>
             <td style={{ padding: "8px 8px", cursor: "pointer" }} onClick={() => onSelect(c)}>{c.documentUrl && <a href={c.documentUrl} target="_blank" rel="noopener" onClick={e => e.stopPropagation()} style={{ color: C.accentL, fontSize: 10 }}>書類</a>}</td>
           </tr>;
         })}</tbody>
