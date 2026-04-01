@@ -448,6 +448,82 @@ function CircularGauge({ value, target, label, size = 110 }) {
   </div>;
 }
 
+function SVGLineChart({ data, series, height = 280 }) {
+  const [hover, setHover] = React.useState(null);
+  if (!data || data.length === 0) return <div style={{ textAlign: "center", padding: 30, color: C.textDim }}>データなし</div>;
+  const width = 720;
+  const padL = 50, padR = 24, padT = 16, padB = 44;
+  const plotW = width - padL - padR;
+  const plotH = height - padT - padB;
+  const allVals = data.flatMap(d => series.map(s => d.values[s.key] || 0));
+  const maxY = Math.max(...allVals, 1);
+  const niceMax = Math.ceil(maxY / (maxY > 20 ? 5 : maxY > 5 ? 2 : 1)) * (maxY > 20 ? 5 : maxY > 5 ? 2 : 1);
+  const xStep = data.length > 1 ? plotW / (data.length - 1) : plotW;
+  const toX = (i) => padL + (data.length > 1 ? i * xStep : plotW / 2);
+  const toY = (v) => padT + plotH - (v / niceMax) * plotH;
+  const yTicks = Math.min(5, niceMax);
+  const barSeries = series.filter(s => s.type === "bar");
+  const barGroupW = data.length > 1 ? Math.min(xStep * 0.7, 48) : 48;
+  const barW = barSeries.length > 0 ? barGroupW / barSeries.length : barGroupW;
+
+  return <div>
+    <svg viewBox={`0 0 ${width} ${height}`} style={{ width: "100%", display: "block" }}>
+      {/* グリッド */}
+      {Array.from({ length: yTicks + 1 }, (_, i) => {
+        const v = Math.round(niceMax * i / yTicks);
+        const y = toY(v);
+        return <g key={i}>
+          <line x1={padL} y1={y} x2={width - padR} y2={y} stroke={C.border} strokeDasharray={i === 0 ? "0" : "4,4"} strokeWidth={0.8} />
+          <text x={padL - 8} y={y + 3} textAnchor="end" fill={C.textDim} fontSize="10">{v}</text>
+        </g>;
+      })}
+      {/* X軸ラベル */}
+      {data.map((d, i) => <text key={i} x={toX(i)} y={height - 8} textAnchor="middle" fill={C.textSub} fontSize="10" fontWeight="500">{d.label}</text>)}
+      {/* 棒グラフ */}
+      {barSeries.map((s, si) => data.map((d, i) => {
+        const v = d.values[s.key] || 0;
+        const bx = toX(i) - barGroupW / 2 + si * barW;
+        const bh = (v / niceMax) * plotH;
+        return <rect key={`${s.key}-${i}`} x={bx} y={toY(v)} width={barW - 2} height={Math.max(bh, 0)} rx={3}
+          fill={s.color} opacity={hover === i ? 0.95 : 0.65} style={{ transition: "opacity .15s" }} />;
+      }))}
+      {/* エリア */}
+      {series.filter(s => s.type === "area").map(s => {
+        const pts = [`${toX(0)},${toY(0)}`, ...data.map((d, i) => `${toX(i)},${toY(d.values[s.key] || 0)}`), `${toX(data.length - 1)},${toY(0)}`].join(" ");
+        return <polygon key={s.key} points={pts} fill={s.color} fillOpacity={0.12} />;
+      })}
+      {/* 折れ線 */}
+      {series.filter(s => s.type === "line" || s.type === "area").map(s => {
+        const pts = data.map((d, i) => `${toX(i)},${toY(d.values[s.key] || 0)}`).join(" ");
+        return <g key={s.key}>
+          <polyline points={pts} fill="none" stroke={s.color} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+          {data.map((d, i) => <circle key={i} cx={toX(i)} cy={toY(d.values[s.key] || 0)} r={hover === i ? 5 : 3} fill={s.color} stroke={C.card} strokeWidth={2} style={{ transition: "r .15s" }} />)}
+        </g>;
+      })}
+      {/* ホバー領域 */}
+      {data.map((d, i) => <rect key={i} x={data.length > 1 ? toX(i) - xStep / 2 : padL} y={padT} width={data.length > 1 ? xStep : plotW} height={plotH}
+        fill="transparent" onMouseEnter={() => setHover(i)} onMouseLeave={() => setHover(null)} />)}
+      {/* ホバーツールチップ */}
+      {hover !== null && <g style={{ pointerEvents: "none" }}>
+        <line x1={toX(hover)} y1={padT} x2={toX(hover)} y2={padT + plotH} stroke={C.textDim} strokeDasharray="3,3" strokeWidth={1} />
+        <rect x={Math.min(toX(hover) + 10, width - padR - 130)} y={padT + 4} width={120} height={16 + series.length * 18} rx={8} fill={C.surface} stroke={C.border} strokeWidth={1} />
+        <text x={Math.min(toX(hover) + 18, width - padR - 122)} y={padT + 18} fill={C.text} fontSize="11" fontWeight="700">{data[hover].label}</text>
+        {series.map((s, si) => <g key={s.key}>
+          <circle cx={Math.min(toX(hover) + 22, width - padR - 118)} cy={padT + 34 + si * 18} r={4} fill={s.color} />
+          <text x={Math.min(toX(hover) + 30, width - padR - 110)} y={padT + 38 + si * 18} fill={C.textSub} fontSize="10">{s.label}: {data[hover].values[s.key] || 0}</text>
+        </g>)}
+      </g>}
+    </svg>
+    {/* 凡例 */}
+    <div style={{ display: "flex", gap: 16, justifyContent: "center", marginTop: 8 }}>
+      {series.map(s => <div key={s.key} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <div style={{ width: 10, height: 10, borderRadius: s.type === "bar" ? 2 : "50%", background: s.color }} />
+        <span style={{ fontSize: 11, color: C.textSub }}>{s.label}</span>
+      </div>)}
+    </div>
+  </div>;
+}
+
 // ─── Candidate Form ───
 function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew, use2nd }) {
   const u = (f, v) => onChange({ ...c, [f]: v });
@@ -911,7 +987,32 @@ function AnalyticsView({ candidates, use2nd }) {
     });
     const inProc = filtered.filter(c => !CLOSED_STATUSES.includes(c.status));
 
-    return { total, casual, docP, i1D, i1P, i2D, i2P, iFD, iFP, accepted, entered, offerDec, allDec, bySrc, byPos, decList, inProc, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons, passReasons, withdrawReasons, withdrawTimings };
+    // ═══ 月別集計 ═══
+    const byMonth = {};
+    filtered.forEach(c => {
+      if (!c.appliedDate) return;
+      const ym = c.appliedDate.slice(0, 7);
+      if (!byMonth[ym]) byMonth[ym] = { applied: 0, docPass: 0, int1Pass: 0, offer: 0, accepted: 0, declined: 0 };
+      byMonth[ym].applied++;
+      if (isDocPass(c)) byMonth[ym].docPass++;
+      if (is1Pass(c)) byMonth[ym].int1Pass++;
+      if (isFPass(c)) byMonth[ym].offer++;
+      if (isAccepted(c)) byMonth[ym].accepted++;
+      if (isDecline(c)) byMonth[ym].declined++;
+    });
+    const months = Object.keys(byMonth).sort();
+    const monthly = [];
+    if (months.length >= 1) {
+      let [y, m] = months[0].split("-").map(Number);
+      const [ey, em] = months[months.length - 1].split("-").map(Number);
+      while (y < ey || (y === ey && m <= em)) {
+        const key = `${y}-${String(m).padStart(2, "0")}`;
+        monthly.push({ label: `${m}月`, fullLabel: key, values: byMonth[key] || { applied: 0, docPass: 0, int1Pass: 0, offer: 0, accepted: 0, declined: 0 } });
+        m++; if (m > 12) { m = 1; y++; }
+      }
+    }
+
+    return { total, casual, docP, i1D, i1P, i2D, i2P, iFD, iFP, accepted, entered, offerDec, allDec, bySrc, byPos, decList, inProc, monthly, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons, passReasons, withdrawReasons, withdrawTimings };
   }, [filtered]);
 
   const funnelStages = useMemo(() => {
@@ -935,7 +1036,7 @@ function AnalyticsView({ candidates, use2nd }) {
     return base;
   }, [s, use2nd, showFunnel]);
 
-  const dtabs = [{ key: "funnel", label: "ファネル", icon: "▼" }, { key: "speed", label: "選考スピード", icon: "⏱" }, { key: "channel", label: "チャネル別", icon: "◈" }, { key: "decline", label: "辞退分析", icon: "⚠" }, { key: "position", label: "職種別", icon: "◉" }, { key: "pipeline", label: "パイプライン", icon: "◎" }];
+  const dtabs = [{ key: "funnel", label: "ファネル", icon: "▼" }, { key: "trends", label: "推移分析", icon: "📈" }, { key: "speed", label: "選考スピード", icon: "⏱" }, { key: "channel", label: "チャネル別", icon: "◈" }, { key: "decline", label: "辞退分析", icon: "⚠" }, { key: "position", label: "職種別", icon: "◉" }, { key: "pipeline", label: "パイプライン", icon: "◎" }];
 
   return <div>
     {/* ─── 期間フィルター ─── */}
@@ -1098,6 +1199,78 @@ function AnalyticsView({ candidates, use2nd }) {
         <div style={{ display: "grid", gap: 6 }}>{s.inProc.sort((a, b) => STATUS_LIST.indexOf(a.status) - STATUS_LIST.indexOf(b.status)).map(c => <div key={c.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 130px 90px 50px", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
           <span style={{ color: C.text, fontWeight: 600 }}>{c.name}</span><span style={{ color: C.textSub }}>{c.position?.slice(0, 10)}</span><Badge status={c.status} /><span style={{ color: C.textSub }}>{c.source}</span><DaysChip days={daysStalled(c)} />
         </div>)}</div>}
+    </div>}
+
+    {/* ─── 推移分析 ─── */}
+    {dt === "trends" && <div>
+      {s.monthly.length < 2 ? <div style={{ background: C.card, borderRadius: 16, padding: 40, border: `1px solid ${C.border}`, textAlign: "center", color: C.textDim }}>推移表示には2ヶ月以上のデータが必要です</div> : <div>
+        {/* 前月比KPI */}
+        {(() => {
+          const cur = s.monthly[s.monthly.length - 1];
+          const prev = s.monthly[s.monthly.length - 2];
+          const chg = (key) => {
+            const c = cur.values[key], p = prev.values[key];
+            const diff = c - p;
+            const pct = p > 0 ? Math.round((diff / p) * 100) : (c > 0 ? 100 : 0);
+            return { cur: c, prev: p, diff, pct };
+          };
+          const Arrow = ({ v }) => <span style={{ color: v > 0 ? C.ok : v < 0 ? C.bad : C.textDim, fontWeight: 700 }}>{v > 0 ? "↑" : v < 0 ? "↓" : "→"}</span>;
+          return <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 20 }}>
+            {[{ key: "applied", label: "応募数", color: C.info }, { key: "docPass", label: "書類通過", color: C.accent }, { key: "offer", label: "内定", color: "#8b5cf6" }, { key: "declined", label: "辞退", color: C.bad }].map(m => {
+              const d = chg(m.key);
+              return <div key={m.key} style={{ background: C.card, borderRadius: 14, padding: "16px 14px", border: `1px solid ${C.border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 11, color: C.textSub, fontWeight: 600 }}>{m.label}</span>
+                  <span style={{ fontSize: 10, color: C.textDim }}>{cur.label} vs {prev.label}</span>
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: m.color, marginTop: 6 }}>{d.cur}</div>
+                <div style={{ fontSize: 12, marginTop: 4 }}><Arrow v={d.diff} /> <span style={{ color: d.diff > 0 ? C.ok : d.diff < 0 ? C.bad : C.textDim, fontWeight: 600 }}>{d.diff > 0 ? "+" : ""}{d.diff}（{d.pct > 0 ? "+" : ""}{d.pct}%）</span><span style={{ color: C.textDim, marginLeft: 6 }}>前月 {d.prev}</span></div>
+              </div>;
+            })}
+          </div>;
+        })()}
+
+        {/* 応募推移（棒グラフ） */}
+        <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}`, marginBottom: 16 }}>
+          <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>応募推移</h3>
+          <SVGLineChart data={s.monthly} series={[{ key: "applied", label: "応募数", color: C.info, type: "bar" }]} height={240} />
+        </div>
+
+        {/* 選考推移（複数折れ線） */}
+        <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}`, marginBottom: 16 }}>
+          <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>選考推移（月別）</h3>
+          <SVGLineChart data={s.monthly} series={[
+            { key: "applied", label: "応募", color: C.info, type: "line" },
+            { key: "docPass", label: "書類通過", color: C.accent, type: "line" },
+            { key: "offer", label: "内定", color: "#8b5cf6", type: "line" },
+            { key: "accepted", label: "承諾", color: C.ok, type: "line" },
+          ]} height={280} />
+        </div>
+
+        {/* 辞退推移（エリアチャート） */}
+        <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}`, marginBottom: 16 }}>
+          <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>辞退推移</h3>
+          <SVGLineChart data={s.monthly} series={[{ key: "declined", label: "辞退数", color: C.bad, type: "area" }]} height={200} />
+        </div>
+
+        {/* 月別サマリーテーブル */}
+        <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
+          <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>月別サマリー</h3>
+          <div style={{ overflowX: "auto" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "80px repeat(5, 1fr)", gap: 8, padding: "6px 0", borderBottom: `2px solid ${C.border}`, fontSize: 10, color: C.textDim, fontWeight: 700 }}>
+              <span>月</span><span style={{ textAlign: "center" }}>応募</span><span style={{ textAlign: "center" }}>書類通過</span><span style={{ textAlign: "center" }}>内定</span><span style={{ textAlign: "center" }}>承諾</span><span style={{ textAlign: "center" }}>辞退</span>
+            </div>
+            {s.monthly.map((m, idx) => <div key={m.fullLabel} style={{ display: "grid", gridTemplateColumns: "80px repeat(5, 1fr)", gap: 8, padding: "8px 0", borderBottom: `1px solid ${C.border}`, fontSize: 12, background: idx % 2 === 0 ? "transparent" : C.bg + "40" }}>
+              <span style={{ color: C.text, fontWeight: 600 }}>{m.fullLabel}</span>
+              <span style={{ textAlign: "center", color: C.info, fontWeight: 700 }}>{m.values.applied}</span>
+              <span style={{ textAlign: "center", color: C.textSub }}>{m.values.docPass}</span>
+              <span style={{ textAlign: "center", color: m.values.offer > 0 ? "#8b5cf6" : C.textDim, fontWeight: m.values.offer > 0 ? 700 : 400 }}>{m.values.offer}</span>
+              <span style={{ textAlign: "center", color: m.values.accepted > 0 ? C.ok : C.textDim, fontWeight: m.values.accepted > 0 ? 700 : 400 }}>{m.values.accepted}</span>
+              <span style={{ textAlign: "center", color: m.values.declined > 0 ? C.bad : C.textDim, fontWeight: m.values.declined > 0 ? 700 : 400 }}>{m.values.declined}</span>
+            </div>)}
+          </div>
+        </div>
+      </div>}
     </div>}
 
     <Modal open={!!funnelDetail} onClose={() => setFunnelDetail(null)} title={funnelDetail ? `${funnelDetail.label}（${funnelDetail.list.length}名）` : ""} width={480}>
