@@ -839,10 +839,7 @@ function AnalyticsView({ candidates, use2nd }) {
     const is2Done = (c) => stage(c) >= 6 || !!c.interview2Date || !!c.interview2Result;
     const i2D = filtered.filter(is2Done).length;
     const i2P = filtered.filter(is2Pass).length;
-    const isFDone = (c) => {
-      if (["最終辞退", "最終：調整中", "最終：日程確定"].includes(c.status)) return false;
-      return stage(c) >= 9 || !!c.interviewFinalResult;
-    };
+    const isFDone = (c) => stage(c) >= 10 || c.status === "最終：不合格" || c.status === "最終：保留";
     const iFD = filtered.filter(isFDone).length;
     const iFP = filtered.filter(isFPass).length;
     const accepted = filtered.filter(isAccepted).length;
