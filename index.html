@@ -923,7 +923,7 @@ function AnalyticsView({ candidates, use2nd }) {
       );
     }
     base.push(
-      { label: "最終実施", value: s.iFD, color: "#06b6d4", rate: (use2nd ? s.i2P : s.i1P) > 0 ? Math.round((s.iFD / (use2nd ? s.i2P : s.i1P)) * 100) : 0, cumRate: s.total > 0 ? ((s.iFD / s.total) * 100).toFixed(1) : "0", onClick: () => showFunnel("最終面接実施", c => stg(c) >= 9 || !!c.interviewFinalDate || !!c.interviewFinalResult) },
+      { label: "最終実施", value: s.iFD, color: "#06b6d4", rate: (use2nd ? s.i2P : s.i1P) > 0 ? Math.round((s.iFD / (use2nd ? s.i2P : s.i1P)) * 100) : 0, cumRate: s.total > 0 ? ((s.iFD / s.total) * 100).toFixed(1) : "0", onClick: () => showFunnel("最終面接実施", c => stg(c) >= 10 || c.status === "最終：不合格" || c.status === "最終：保留") },
       { label: "内定", value: s.iFP, color: C.accentL, rate: s.iFD > 0 ? Math.round((s.iFP / s.iFD) * 100) : 0, cumRate: s.total > 0 ? ((s.iFP / s.total) * 100).toFixed(1) : "0", onClick: () => showFunnel("内定（最終通過）", c => stg(c) >= 10 || c.interviewFinalResult === "合格") },
       { label: "承諾・入社", value: s.accepted + s.entered, color: C.ok, rate: s.iFP > 0 ? Math.round(((s.accepted + s.entered) / s.iFP) * 100) : 0, cumRate: s.total > 0 ? (((s.accepted + s.entered) / s.total) * 100).toFixed(1) : "0", onClick: () => showFunnel("承諾・入社", c => stg(c) >= 13 || c.status === "入社済み") },
     );
