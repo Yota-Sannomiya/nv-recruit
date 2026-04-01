@@ -365,7 +365,7 @@ function HeroKPICard({ label, value, sub, gradient, glowColor, icon }) {
 function TrapezoidFunnel({ stages, onDrillDown }) {
   if (!stages || stages.length === 0) return <div style={{ textAlign: "center", padding: 30, color: C.textDim }}>データなし</div>;
   const maxVal = Math.max(...stages.map(st => st.value), 1);
-  const rowH = 52, gap = 6, svgW = 520;
+  const rowH = 52, gap = 6, svgW = 640;
   const totalH = stages.length * rowH + (stages.length - 1) * gap;
   const minPct = 0.18, maxPct = 0.95;
   const [hover, setHover] = React.useState(null);
@@ -407,9 +407,14 @@ function TrapezoidFunnel({ stages, onDrillDown }) {
           <text x={cx} y={y + rowH / 2 + 12} textAnchor="middle" fill="rgba(255,255,255,.7)" fontSize="11" fontWeight="600" style={{ pointerEvents: "none" }}>
             {st.label}
           </text>
-          {st.rate !== undefined && <text x={cx + topW / 2 + 10} y={y + rowH / 2 + 4} textAnchor="start" fill={C.textSub} fontSize="10" fontWeight="600">
-            {st.rate}%
-          </text>}
+          {st.rate !== undefined && <g style={{ pointerEvents: "none" }}>
+            <text x={cx + topW / 2 + 10} y={y + rowH / 2 - 4} textAnchor="start" fill={C.textSub} fontSize="10" fontWeight="600">
+              前段階比 {st.rate}%
+            </text>
+            {st.cumRate !== undefined && <text x={cx + topW / 2 + 10} y={y + rowH / 2 + 10} textAnchor="start" fill={C.warn} fontSize="10" fontWeight="700">
+              応募比 {st.cumRate}%
+            </text>}
+          </g>}
         </g>;
       })}
     </svg>
