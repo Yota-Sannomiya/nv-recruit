@@ -168,6 +168,129 @@ const C = {
   bad: "#ef4444", badBg: "#ef444414", info: "#3b82f6", infoBg: "#3b82f614",
 };
 
+const TARGETS = { applied: 30, offer: 3, accepted: 2, docPassRate: 50, int1PassRate: 50, avgDays: 35, declineMax: 3 };
+
+const ANALYTICS_STAGE = {
+  "カジュアル：書類確認": 0, "カジュアル：書類見送り": 0,
+  "カジュアル：調整中": 1, "カジュアル：日程確定": 1, "カジュアル：完了": 2,
+  "カジュアル：辞退": 1, "カジュアル：見送り": 1,
+  "書類選考中": 3, "書類お見送り": 3, "書類辞退": 3,
+  "一次：調整中": 4, "一次：日程確定": 4, "一次：合格": 5, "一次：不合格": 4, "一次：保留": 4, "一次辞退": 4,
+  "二次：調整中": 6, "二次：日程確定": 6, "二次：合格": 7, "二次：不合格": 6, "二次辞退": 6,
+  "適性検査中": 8, "適性検査辞退": 8,
+  "最終：調整中": 9, "最終：日程確定": 9, "最終：合格": 10, "最終：不合格": 9, "最終：保留": 9, "最終辞退": 9,
+  "内定：オファー面談": 12, "内定：承諾": 13, "内定：辞退": 12, "内定：保留": 12,
+  "入社済み": 14,
+};
+
+function computeStats(filtered, use2nd) {
+  const stage = (c) => ANALYTICS_STAGE[c.status] || 0;
+  const isDocPass = (c) => stage(c) >= 4 || !!c.interview1Date || !!c.interview1Result;
+  const is1Pass = (c) => stage(c) >= 5 || c.interview1Result === "合格";
+  const is2Pass = (c) => stage(c) >= 7 || c.interview2Result === "合格";
+  const isFPass = (c) => stage(c) >= 10 || c.interviewFinalResult === "合格";
+  const isAccepted = (c) => stage(c) >= 13;
+  const ALL_DECLINE = ["カジュアル：辞退", "書類辞退", "一次辞退", "二次辞退", "適性検査辞退", "最終辞退", "内定：辞退"];
+  const isDecline = (c) => ALL_DECLINE.includes(c.status);
+
+  const total = filtered.length;
+  const casual = filtered.filter(c => c.status?.startsWith("カジュアル")).length;
+  const docP = filtered.filter(isDocPass).length;
+  const is1Done = (c) => stage(c) >= 4 || !!c.interview1Date || !!c.interview1Result;
+  const i1D = filtered.filter(is1Done).length;
+  const i1P = filtered.filter(is1Pass).length;
+  const is2Done = (c) => stage(c) >= 6 || !!c.interview2Date || !!c.interview2Result;
+  const i2D = filtered.filter(is2Done).length;
+  const i2P = filtered.filter(is2Pass).length;
+  const isFDone = (c) => stage(c) >= 10 || c.status === "最終：不合格" || c.status === "最終：保留";
+  const iFD = filtered.filter(isFDone).length;
+  const iFP = filtered.filter(isFPass).length;
+  const accepted = filtered.filter(isAccepted).length;
+  const entered = filtered.filter(c => c.status === "入社済み").length;
+  const offerDec = filtered.filter(c => c.status === "内定：辞退").length;
+  const allDec = filtered.filter(isDecline).length;
+
+  const speeds = { toInt1: [], toIntF: [], toOffer: [], total: [] };
+  filtered.forEach(c => {
+    if (c.appliedDate && c.interview1Date) { const d = daysBetween(c.appliedDate, c.interview1Date); if (d !== null && d >= 0) speeds.toInt1.push(d); }
+    if (c.appliedDate && c.interviewFinalDate) { const d = daysBetween(c.appliedDate, c.interviewFinalDate); if (d !== null && d >= 0) speeds.toIntF.push(d); }
+    if (c.appliedDate && c.offerDate) { const d = daysBetween(c.appliedDate, c.offerDate); if (d !== null && d >= 0) speeds.toOffer.push(d); }
+    if (c.appliedDate && (c.status === "内定：承諾" || c.status === "入社済み") && c.offerDate) { const d = daysBetween(c.appliedDate, c.offerDate); if (d !== null && d >= 0) speeds.total.push(d); }
+  });
+  const avg = (arr) => arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+
+  const bySrc = {}; const byPos = {};
+  filtered.forEach(c => {
+    const src = c.source || "不明";
+    if (!bySrc[src]) bySrc[src] = { applied: 0, docPass: 0, pass1: 0, passF: 0, offer: 0, accepted: 0, declined: 0 };
+    bySrc[src].applied++;
+    if (isDocPass(c)) bySrc[src].docPass++;
+    if (is1Pass(c)) bySrc[src].pass1++;
+    if (isFPass(c)) bySrc[src].passF++;
+    if (isFPass(c)) bySrc[src].offer++;
+    if (isAccepted(c)) bySrc[src].accepted++;
+    if (isDecline(c)) bySrc[src].declined++;
+
+    const p = c.position || "不明";
+    if (!byPos[p]) byPos[p] = { applied: 0, docPass: 0, offer: 0, accepted: 0, inProc: 0 };
+    byPos[p].applied++;
+    if (isDocPass(c)) byPos[p].docPass++;
+    if (isFPass(c)) byPos[p].offer++;
+    if (isAccepted(c)) byPos[p].accepted++;
+    if (!CLOSED_STATUSES.includes(c.status)) byPos[p].inProc++;
+  });
+
+  const rejectReasons = {};
+  filtered.forEach(c => {
+    [c.docScreeningReason, c.interview1RejectReason, c.interviewFinalRejectReason].forEach(r => { if (r) rejectReasons[r] = (rejectReasons[r] || 0) + 1; });
+  });
+  const passReasons = {};
+  filtered.forEach(c => {
+    [c.interview1PassReason, c.interviewFinalPassReason].forEach(r => { if (r) passReasons[r] = (passReasons[r] || 0) + 1; });
+  });
+
+  const withdrawReasons = {};
+  const withdrawTimings = {};
+  const TIMING_MAP = {
+    "カジュアル：辞退": "カジュアル辞退", "書類辞退": "書類選考辞退", "一次辞退": "一次面接辞退",
+    "適性検査辞退": "適性検査辞退", "最終辞退": "最終面接辞退", "内定：辞退": "内定辞退",
+  };
+  const decList = filtered.filter(isDecline).map(c => {
+    const timing = TIMING_MAP[c.status] || c.status;
+    const reason = c.withdrawReason || "";
+    if (reason) withdrawReasons[reason] = (withdrawReasons[reason] || 0) + 1;
+    withdrawTimings[timing] = (withdrawTimings[timing] || 0) + 1;
+    return { name: c.name, pos: c.position, src: c.source, st: c.status, memo: c.memo, reason, timing };
+  });
+  const inProc = filtered.filter(c => !CLOSED_STATUSES.includes(c.status));
+
+  const byMonth = {};
+  filtered.forEach(c => {
+    if (!c.appliedDate) return;
+    const ym = c.appliedDate.slice(0, 7);
+    if (!byMonth[ym]) byMonth[ym] = { applied: 0, docPass: 0, int1Pass: 0, offer: 0, accepted: 0, declined: 0 };
+    byMonth[ym].applied++;
+    if (isDocPass(c)) byMonth[ym].docPass++;
+    if (is1Pass(c)) byMonth[ym].int1Pass++;
+    if (isFPass(c)) byMonth[ym].offer++;
+    if (isAccepted(c)) byMonth[ym].accepted++;
+    if (isDecline(c)) byMonth[ym].declined++;
+  });
+  const months = Object.keys(byMonth).sort();
+  const monthly = [];
+  if (months.length >= 1) {
+    let [y, m] = months[0].split("-").map(Number);
+    const [ey, em] = months[months.length - 1].split("-").map(Number);
+    while (y < ey || (y === ey && m <= em)) {
+      const key = `${y}-${String(m).padStart(2, "0")}`;
+      monthly.push({ label: `${m}月`, fullLabel: key, values: byMonth[key] || { applied: 0, docPass: 0, int1Pass: 0, offer: 0, accepted: 0, declined: 0 } });
+      m++; if (m > 12) { m = 1; y++; }
+    }
+  }
+
+  return { total, casual, docP, i1D, i1P, i2D, i2P, iFD, iFP, accepted, entered, offerDec, allDec, bySrc, byPos, decList, inProc, monthly, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons, passReasons, withdrawReasons, withdrawTimings };
+}
+
 const statusColor = (s) => {
   const m = {
     "カジュアル：書類確認": ["#c4b5fd", "#c4b5fd14"], "カジュアル：書類見送り": ["#ef4444", "#ef444414"],
@@ -320,12 +443,59 @@ const CalendarPicker = React.memo(function CalendarPicker({ value: rawValue, onC
   </Fl>;
 });
 
-function KPICard({ label, value, sub, color = C.accent, icon }) {
+function KPICard({ label, value, sub, color = C.accent, icon, prev, invertDelta }) {
+  const hasPrev = prev !== undefined && prev !== null;
+  let deltaEl = null;
+  if (hasPrev) {
+    const curNum = parseFloat(String(value).replace(/[^0-9.\-]/g, ""));
+    const prevNum = parseFloat(String(prev).replace(/[^0-9.\-]/g, ""));
+    if (!isNaN(curNum) && !isNaN(prevNum)) {
+      const diff = curNum - prevNum;
+      const isGood = invertDelta ? diff <= 0 : diff >= 0;
+      const arrow = diff > 0 ? "↑" : diff < 0 ? "↓" : "→";
+      const dc = diff === 0 ? C.textDim : isGood ? C.ok : C.bad;
+      deltaEl = <span style={{ fontSize: 10, color: dc, fontWeight: 700 }}>{arrow} 前期 {prev}</span>;
+    }
+  }
   return <div style={{ background: C.card, borderRadius: 14, padding: "20px 18px", border: `1px solid ${C.border}`, position: "relative", overflow: "hidden" }}>
     <div style={{ position: "absolute", top: 12, right: 14, fontSize: 22, opacity: .15 }}>{icon}</div>
     <div style={{ fontSize: 32, fontWeight: 800, color, lineHeight: 1, letterSpacing: "-1px" }}>{value}</div>
     <div style={{ fontSize: 11, color: C.textSub, fontWeight: 600, marginTop: 6 }}>{label}</div>
     {sub && <div style={{ fontSize: 10, color: C.textDim, marginTop: 3 }}>{sub}</div>}
+    {deltaEl && <div style={{ marginTop: 4 }}>{deltaEl}</div>}
+  </div>;
+}
+
+function InsightsPanel({ stats, filtered }) {
+  const insights = [];
+  const s = stats;
+  // 低通過率検出
+  const docRate = s.total > 0 ? (s.docP / s.total) * 100 : null;
+  if (docRate !== null && docRate < 30) insights.push({ icon: "📄", severity: "warn", title: "書類通過率が低め", message: `書類通過率 ${Math.round(docRate)}% — 応募チャネルや求人票の見直しを検討`, color: C.warn });
+  const i1Rate = s.i1D > 0 ? (s.i1P / s.i1D) * 100 : null;
+  if (i1Rate !== null && i1Rate < 30) insights.push({ icon: "🗣", severity: "warn", title: "一次通過率が低め", message: `一次通過率 ${Math.round(i1Rate)}% — 面接基準や書類選考精度の見直しを検討`, color: C.warn });
+  // 長期停滞
+  const stalled = filtered.filter(c => !CLOSED_STATUSES.includes(c.status) && daysStalled(c) >= 14);
+  if (stalled.length > 0) insights.push({ icon: "⏸", severity: "alert", title: "長期停滞候補者", message: `${stalled.length}名が14日以上ステータス未変更`, color: C.bad });
+  // 高辞退率
+  if (s.iFP > 0 && s.offerDec / s.iFP >= 0.3) insights.push({ icon: "⚠", severity: "alert", title: "内定辞退率が高い", message: `内定辞退率 ${Math.round((s.offerDec / s.iFP) * 100)}% — オファー条件の競争力を確認`, color: C.bad });
+  // 高効率チャネル
+  Object.entries(s.bySrc).forEach(([name, d]) => {
+    if (d.applied >= 3) {
+      const rate = Math.round((d.docPass / d.applied) * 100);
+      if (rate >= 70) insights.push({ icon: "◈", severity: "info", title: `${name}が高効率`, message: `書類通過率 ${rate}%（${d.docPass}/${d.applied}名）`, color: C.ok });
+    }
+  });
+  if (insights.length === 0) return null;
+  const sevOrder = { alert: 0, warn: 1, info: 2 };
+  insights.sort((a, b) => sevOrder[a.severity] - sevOrder[b.severity]);
+  const show = insights.slice(0, 4);
+  const bgMap = { alert: C.badBg, warn: C.warnBg, info: C.infoBg };
+  return <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(show.length, 4)}, 1fr)`, gap: 10, marginBottom: 20 }}>
+    {show.map((ins, i) => <div key={i} style={{ background: bgMap[ins.severity], borderRadius: 12, padding: "12px 14px", borderLeft: `3px solid ${ins.color}`, minWidth: 0 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: ins.color, marginBottom: 4 }}>{ins.icon} {ins.title}</div>
+      <div style={{ fontSize: 11, color: C.textSub, lineHeight: 1.4 }}>{ins.message}</div>
+    </div>)}
   </div>;
 }
 
@@ -347,7 +517,27 @@ function FunnelBar({ label, value, maxVal, rate, cumRate, color, sub, onClick })
   </div>;
 }
 
-function HeroKPICard({ label, value, sub, gradient, glowColor, icon }) {
+function HeroKPICard({ label, value, sub, gradient, glowColor, icon, prev, target, invertDelta }) {
+  let deltaEl = null;
+  if (prev !== undefined && prev !== null) {
+    const diff = value - prev;
+    const pct = prev > 0 ? Math.round((diff / prev) * 100) : (value > 0 ? 100 : 0);
+    const isGood = invertDelta ? diff <= 0 : diff >= 0;
+    const arrow = diff > 0 ? "↑" : diff < 0 ? "↓" : "→";
+    const dc = diff === 0 ? "rgba(255,255,255,.5)" : isGood ? "#86efac" : "#fca5a5";
+    deltaEl = <span style={{ fontSize: 12, color: dc, fontWeight: 700 }}>{arrow}{diff > 0 ? "+" : ""}{diff}（{pct > 0 ? "+" : ""}{pct}%）<span style={{ fontWeight: 400, opacity: .7 }}>前期 {prev}</span></span>;
+  }
+  let targetEl = null;
+  if (target !== undefined && target > 0) {
+    const pct = Math.min(value / target, 1) * 100;
+    const remain = target - value;
+    targetEl = <div style={{ marginTop: 8 }}>
+      <div style={{ height: 4, background: "rgba(255,255,255,.15)", borderRadius: 2, overflow: "hidden" }}>
+        <div style={{ height: "100%", width: `${pct}%`, background: pct >= 100 ? "#86efac" : "rgba(255,255,255,.6)", borderRadius: 2, transition: "width .6s" }} />
+      </div>
+      <div style={{ fontSize: 10, color: "rgba(255,255,255,.5)", marginTop: 3 }}>{pct >= 100 ? `目標 ${target} 達成` : `目標 ${target}（あと${remain}）`}</div>
+    </div>;
+  }
   return <div style={{
     background: `linear-gradient(135deg, ${gradient[0]}, ${gradient[1]})`,
     borderRadius: 18, padding: "28px 24px",
@@ -359,6 +549,8 @@ function HeroKPICard({ label, value, sub, gradient, glowColor, icon }) {
     <div style={{ fontSize: 44, fontWeight: 800, color: "#fff", lineHeight: 1, letterSpacing: "-2px" }}>{value}</div>
     <div style={{ fontSize: 13, color: "rgba(255,255,255,.8)", fontWeight: 600, marginTop: 10 }}>{label}</div>
     {sub && <div style={{ fontSize: 11, color: "rgba(255,255,255,.55)", marginTop: 4 }}>{sub}</div>}
+    {deltaEl && <div style={{ marginTop: 4 }}>{deltaEl}</div>}
+    {targetEl}
   </div>;
 }
 
@@ -834,25 +1026,13 @@ function InterviewView({ candidates, onSelect, use2nd }) {
 
 // ─── Analytics ───
 function AnalyticsView({ candidates, use2nd }) {
-  const [dt, setDt] = useState("funnel");
+  const [dt, setDt] = useState("overview");
   const [funnelDetail, setFunnelDetail] = useState(null);
   const [periodStart, setPeriodStart] = useState("");
   const [periodEnd, setPeriodEnd] = useState("");
   const [chHover, setChHover] = useState(null);
 
-  const STAGE = {
-    "カジュアル：書類確認": 0, "カジュアル：書類見送り": 0,
-    "カジュアル：調整中": 1, "カジュアル：日程確定": 1, "カジュアル：完了": 2,
-    "カジュアル：辞退": 1, "カジュアル：見送り": 1,
-    "書類選考中": 3, "書類お見送り": 3, "書類辞退": 3,
-    "一次：調整中": 4, "一次：日程確定": 4, "一次：合格": 5, "一次：不合格": 4, "一次：保留": 4, "一次辞退": 4,
-    "二次：調整中": 6, "二次：日程確定": 6, "二次：合格": 7, "二次：不合格": 6, "二次辞退": 6,
-    "適性検査中": 8, "適性検査辞退": 8,
-    "最終：調整中": 9, "最終：日程確定": 9, "最終：合格": 10, "最終：不合格": 9, "最終：保留": 9, "最終辞退": 9,
-    "内定：オファー面談": 12, "内定：承諾": 13, "内定：辞退": 12, "内定：保留": 12,
-    "入社済み": 14,
-  };
-  const stg = (c) => STAGE[c.status] || 0;
+  const stg = (c) => ANALYTICS_STAGE[c.status] || 0;
 
   // ─── 期間フィルター ───
   const filtered = useMemo(() => {
@@ -884,136 +1064,34 @@ function AnalyticsView({ candidates, use2nd }) {
 
   const activePreset = presets.find(p => p.start === periodStart && p.end === periodEnd)?.label || "";
 
-  const s = useMemo(() => {
-    // ═══════════════════════════════════════════════════════════
-    // 集計の設計思想:
-    //   辞退ステータスがフェーズ別に分かれているため、
-    //   ステータスだけでどこまで進んだかを正確に判定できる。
-    //   例: 「最終辞退」→ 書類通過○、一次通過○、適性検査通過○、最終通過×
-    //   例: 「内定：辞退」→ 書類通過○、一次通過○、適性検査通過○、最終通過○、内定○
-    //
-    //   各ステップの通過ステージ:
-    //     書類通過 = ステージ4以上
-    //     一次通過 = ステージ5以上 or 一次合格
-    //     二次通過 = ステージ7以上 or 二次合格
-    //     最終通過 = ステージ10以上 or 最終合格
-    //     内定     = ステージ12以上
-    // ═══════════════════════════════════════════════════════════
+  // ─── 前期間算出 ───
+  const prevRange = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    const fmt = (d) => d.toISOString().slice(0, 10);
+    const lastDay = (yr, mo) => new Date(yr, mo + 1, 0);
+    if (activePreset === "今月") return { start: fmt(new Date(y, m - 1, 1)), end: fmt(lastDay(y, m - 1)) };
+    if (activePreset === "先月") return { start: fmt(new Date(y, m - 2, 1)), end: fmt(lastDay(y, m - 2)) };
+    if (activePreset === "直近3ヶ月") return { start: fmt(new Date(y, m - 5, 1)), end: fmt(lastDay(y, m - 3)) };
+    if (!periodStart) return null;
+    const sD = new Date(periodStart), eD = periodEnd ? new Date(periodEnd) : now;
+    const dur = eD - sD;
+    const ps = new Date(sD - dur), pe = new Date(sD - 86400000);
+    return { start: fmt(ps), end: fmt(pe) };
+  }, [periodStart, periodEnd, activePreset]);
 
-    const stage = (c) => STAGE[c.status] || 0;
-
-    const isDocPass = (c) => stage(c) >= 4 || !!c.interview1Date || !!c.interview1Result;
-    const is1Pass = (c) => stage(c) >= 5 || c.interview1Result === "合格";
-    const is2Pass = (c) => stage(c) >= 7 || c.interview2Result === "合格";
-    const isFPass = (c) => stage(c) >= 10 || c.interviewFinalResult === "合格";
-    const isAccepted = (c) => stage(c) >= 13;
-    const ALL_DECLINE = ["カジュアル：辞退", "書類辞退", "一次辞退", "二次辞退", "適性検査辞退", "最終辞退", "内定：辞退"];
-    const isDecline = (c) => ALL_DECLINE.includes(c.status);
-
-    // ═══ 選考フロー（累積型ファネル）═══
-    const total = filtered.length;
-    const casual = filtered.filter(c => c.status?.startsWith("カジュアル")).length;
-    const docP = filtered.filter(isDocPass).length;
-    const is1Done = (c) => stage(c) >= 4 || !!c.interview1Date || !!c.interview1Result;
-    const i1D = filtered.filter(is1Done).length;
-    const i1P = filtered.filter(is1Pass).length;
-    const is2Done = (c) => stage(c) >= 6 || !!c.interview2Date || !!c.interview2Result;
-    const i2D = filtered.filter(is2Done).length;
-    const i2P = filtered.filter(is2Pass).length;
-    const isFDone = (c) => stage(c) >= 10 || c.status === "最終：不合格" || c.status === "最終：保留";
-    const iFD = filtered.filter(isFDone).length;
-    const iFP = filtered.filter(isFPass).length;
-    const accepted = filtered.filter(isAccepted).length;
-    const entered = filtered.filter(c => c.status === "入社済み").length;
-    const offerDec = filtered.filter(c => c.status === "内定：辞退").length;
-    const allDec = filtered.filter(isDecline).length;
-
-    const speeds = { toInt1: [], toIntF: [], toOffer: [], total: [] };
-    filtered.forEach(c => {
-      if (c.appliedDate && c.interview1Date) { const d = daysBetween(c.appliedDate, c.interview1Date); if (d !== null && d >= 0) speeds.toInt1.push(d); }
-      if (c.appliedDate && c.interviewFinalDate) { const d = daysBetween(c.appliedDate, c.interviewFinalDate); if (d !== null && d >= 0) speeds.toIntF.push(d); }
-      if (c.appliedDate && c.offerDate) { const d = daysBetween(c.appliedDate, c.offerDate); if (d !== null && d >= 0) speeds.toOffer.push(d); }
-      if (c.appliedDate && (c.status === "内定：承諾" || c.status === "入社済み") && c.offerDate) { const d = daysBetween(c.appliedDate, c.offerDate); if (d !== null && d >= 0) speeds.total.push(d); }
+  const prevFiltered = useMemo(() => {
+    if (!prevRange) return null;
+    return candidates.filter(c => {
+      if (!c.appliedDate) return false;
+      if (prevRange.start && c.appliedDate < prevRange.start) return false;
+      if (prevRange.end && c.appliedDate > prevRange.end) return false;
+      return true;
     });
-    const avg = (arr) => arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+  }, [candidates, prevRange]);
 
-    const bySrc = {}; const byPos = {};
-    filtered.forEach(c => {
-      const src = c.source || "不明";
-      if (!bySrc[src]) bySrc[src] = { applied: 0, docPass: 0, pass1: 0, passF: 0, offer: 0, accepted: 0, declined: 0 };
-      bySrc[src].applied++;
-      if (isDocPass(c)) bySrc[src].docPass++;
-      if (is1Pass(c)) bySrc[src].pass1++;
-      if (isFPass(c)) bySrc[src].passF++;
-      if (isFPass(c)) bySrc[src].offer++;
-      if (isAccepted(c)) bySrc[src].accepted++;
-      if (isDecline(c)) bySrc[src].declined++;
-
-      const p = c.position || "不明";
-      if (!byPos[p]) byPos[p] = { applied: 0, docPass: 0, offer: 0, accepted: 0, inProc: 0 };
-      byPos[p].applied++;
-      if (isDocPass(c)) byPos[p].docPass++;
-      if (isFPass(c)) byPos[p].offer++;
-      if (isAccepted(c)) byPos[p].accepted++;
-      if (!CLOSED_STATUSES.includes(c.status)) byPos[p].inProc++;
-    });
-
-    const rejectReasons = {};
-    filtered.forEach(c => {
-      [c.docScreeningReason, c.interview1RejectReason, c.interviewFinalRejectReason].forEach(r => { if (r) rejectReasons[r] = (rejectReasons[r] || 0) + 1; });
-    });
-
-    const passReasons = {};
-    filtered.forEach(c => {
-      [c.interview1PassReason, c.interviewFinalPassReason].forEach(r => { if (r) passReasons[r] = (passReasons[r] || 0) + 1; });
-    });
-
-    const withdrawReasons = {};
-    const withdrawTimings = {};
-    const TIMING_MAP = {
-      "カジュアル：辞退": "カジュアル辞退",
-      "書類辞退": "書類選考辞退",
-      "一次辞退": "一次面接辞退",
-      "適性検査辞退": "適性検査辞退",
-      "最終辞退": "最終面接辞退",
-      "内定：辞退": "内定辞退",
-    };
-    const decList = filtered.filter(isDecline).map(c => {
-      const timing = TIMING_MAP[c.status] || c.status;
-      const reason = c.withdrawReason || "";
-      if (reason) withdrawReasons[reason] = (withdrawReasons[reason] || 0) + 1;
-      withdrawTimings[timing] = (withdrawTimings[timing] || 0) + 1;
-      return { name: c.name, pos: c.position, src: c.source, st: c.status, memo: c.memo, reason, timing };
-    });
-    const inProc = filtered.filter(c => !CLOSED_STATUSES.includes(c.status));
-
-    // ═══ 月別集計 ═══
-    const byMonth = {};
-    filtered.forEach(c => {
-      if (!c.appliedDate) return;
-      const ym = c.appliedDate.slice(0, 7);
-      if (!byMonth[ym]) byMonth[ym] = { applied: 0, docPass: 0, int1Pass: 0, offer: 0, accepted: 0, declined: 0 };
-      byMonth[ym].applied++;
-      if (isDocPass(c)) byMonth[ym].docPass++;
-      if (is1Pass(c)) byMonth[ym].int1Pass++;
-      if (isFPass(c)) byMonth[ym].offer++;
-      if (isAccepted(c)) byMonth[ym].accepted++;
-      if (isDecline(c)) byMonth[ym].declined++;
-    });
-    const months = Object.keys(byMonth).sort();
-    const monthly = [];
-    if (months.length >= 1) {
-      let [y, m] = months[0].split("-").map(Number);
-      const [ey, em] = months[months.length - 1].split("-").map(Number);
-      while (y < ey || (y === ey && m <= em)) {
-        const key = `${y}-${String(m).padStart(2, "0")}`;
-        monthly.push({ label: `${m}月`, fullLabel: key, values: byMonth[key] || { applied: 0, docPass: 0, int1Pass: 0, offer: 0, accepted: 0, declined: 0 } });
-        m++; if (m > 12) { m = 1; y++; }
-      }
-    }
-
-    return { total, casual, docP, i1D, i1P, i2D, i2P, iFD, iFP, accepted, entered, offerDec, allDec, bySrc, byPos, decList, inProc, monthly, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons, passReasons, withdrawReasons, withdrawTimings };
-  }, [filtered]);
+  const s = useMemo(() => computeStats(filtered, use2nd), [filtered, use2nd]);
+  const prevS = useMemo(() => prevFiltered ? computeStats(prevFiltered, use2nd) : null, [prevFiltered, use2nd]);
 
   const funnelStages = useMemo(() => {
     const base = [
@@ -1036,7 +1114,7 @@ function AnalyticsView({ candidates, use2nd }) {
     return base;
   }, [s, use2nd, showFunnel]);
 
-  const dtabs = [{ key: "funnel", label: "ファネル", icon: "▼" }, { key: "trends", label: "推移分析", icon: "📈" }, { key: "speed", label: "選考スピード", icon: "⏱" }, { key: "channel", label: "チャネル別", icon: "◈" }, { key: "decline", label: "辞退分析", icon: "⚠" }, { key: "position", label: "職種別", icon: "◉" }, { key: "pipeline", label: "パイプライン", icon: "◎" }];
+  const dtabs = [{ key: "overview", label: "選考概況", icon: "▼" }, { key: "trends", label: "推移分析", icon: "📈" }, { key: "channel", label: "チャネル別", icon: "◈" }, { key: "decline", label: "辞退分析", icon: "⚠" }, { key: "detail", label: "詳細", icon: "◉" }];
 
   return <div>
     {/* ─── 期間フィルター ─── */}
@@ -1048,23 +1126,29 @@ function AnalyticsView({ candidates, use2nd }) {
         <span style={{ color: C.textDim, fontSize: 12 }}>〜</span>
         <CalendarPicker value={periodEnd} onChange={setPeriodEnd} label="終了日" />
       </div>
-      {(periodStart || periodEnd) && <span style={{ fontSize: 11, color: C.textDim, marginLeft: 4 }}>{filtered.length}/{candidates.length}件</span>}
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 11, color: C.textDim }}>{filtered.length}名 / 全{candidates.length}名</span>
+        <span style={{ fontSize: 10, color: C.textDim, opacity: 0.7 }}>最終更新: {new Date().toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+      </div>
     </div>
 
     {/* ─── ヒーローKPI ─── */}
     <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginBottom: 14 }}>
-      <HeroKPICard label="応募数" value={s.total} icon="📥" gradient={[C.accent, C.accentD]} glowColor={C.accent} sub={`全${candidates.length}件中`} />
-      <HeroKPICard label="内定数" value={s.iFP} icon="🎯" gradient={["#8b5cf6", "#6d28d9"]} glowColor="#8b5cf6" sub={s.total > 0 ? `転換率 ${(s.iFP / s.total * 100).toFixed(1)}%` : ""} />
-      <HeroKPICard label="承諾/入社" value={s.accepted + s.entered} icon="✅" gradient={[C.ok, "#16a34a"]} glowColor={C.ok} sub={s.iFP > 0 ? `承諾率 ${Math.round((s.accepted + s.entered) / s.iFP * 100)}%` : ""} />
+      <HeroKPICard label="応募数" value={s.total} icon="📥" gradient={[C.accent, C.accentD]} glowColor={C.accent} sub={`全${candidates.length}件中`} prev={prevS?.total} target={TARGETS.applied} />
+      <HeroKPICard label="内定数" value={s.iFP} icon="🎯" gradient={["#8b5cf6", "#6d28d9"]} glowColor="#8b5cf6" sub={s.total > 0 ? `転換率 ${(s.iFP / s.total * 100).toFixed(1)}%` : ""} prev={prevS?.iFP} target={TARGETS.offer} />
+      <HeroKPICard label="承諾/入社" value={s.accepted + s.entered} icon="✅" gradient={[C.ok, "#16a34a"]} glowColor={C.ok} sub={s.iFP > 0 ? `承諾率 ${Math.round((s.accepted + s.entered) / s.iFP * 100)}%` : ""} prev={prevS ? prevS.accepted + prevS.entered : null} target={TARGETS.accepted} />
     </div>
 
     {/* ─── サブKPI ─── */}
     <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 24 }}>
-      <KPICard label="書類通過率" value={s.total > 0 ? Math.round((s.docP / s.total) * 100) + "%" : "–"} sub={`${s.docP}/${s.total}名`} icon="📄" color={C.accent} />
-      <KPICard label="一次通過率" value={s.i1D > 0 ? Math.round((s.i1P / s.i1D) * 100) + "%" : "–"} sub={`${s.i1P}/${s.i1D}名`} icon="🗣" color="#8b5cf6" />
-      <KPICard label="平均選考日数" value={s.speeds.toOffer !== null ? s.speeds.toOffer + "日" : "–"} sub="応募→内定" icon="⏱" color={C.warn} />
-      <KPICard label="辞退" value={s.allDec} sub={s.offerDec > 0 ? `内定辞退 ${s.offerDec}名` : ""} icon="↩" color={C.bad} />
+      <KPICard label="書類通過率" value={s.total > 0 ? Math.round((s.docP / s.total) * 100) + "%" : "–"} sub={`${s.docP}/${s.total}名`} icon="📄" color={C.accent} prev={prevS && prevS.total > 0 ? Math.round((prevS.docP / prevS.total) * 100) + "%" : null} />
+      <KPICard label="一次通過率" value={s.i1D > 0 ? Math.round((s.i1P / s.i1D) * 100) + "%" : "–"} sub={`${s.i1P}/${s.i1D}名`} icon="🗣" color="#8b5cf6" prev={prevS && prevS.i1D > 0 ? Math.round((prevS.i1P / prevS.i1D) * 100) + "%" : null} />
+      <KPICard label="平均選考日数" value={s.speeds.toOffer !== null ? s.speeds.toOffer + "日" : "–"} sub="応募→内定" icon="⏱" color={C.warn} prev={prevS?.speeds?.toOffer !== null && prevS?.speeds?.toOffer !== undefined ? prevS.speeds.toOffer + "日" : null} invertDelta />
+      <KPICard label="辞退" value={s.allDec} sub={s.offerDec > 0 ? `内定辞退 ${s.offerDec}名` : ""} icon="↩" color={C.bad} prev={prevS?.allDec} invertDelta />
     </div>
+
+    {/* ─── インサイト ─── */}
+    <InsightsPanel stats={s} filtered={filtered} />
 
     {/* ─── タブ（ピル型セグメント） ─── */}
     <div style={{ display: "inline-flex", gap: 2, marginBottom: 20, padding: 4, background: C.surfaceAlt, borderRadius: 12 }}>
@@ -1072,48 +1156,57 @@ function AnalyticsView({ candidates, use2nd }) {
     </div>
 
     {/* ─── ファネル（台形型） ─── */}
-    {dt === "funnel" && <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
-      <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 20px" }}>選考ファネル</h3>
-      <TrapezoidFunnel stages={funnelStages} onDrillDown={true} />
-      {s.offerDec > 0 && <div style={{ marginTop: 12, padding: "8px 14px", background: C.badBg, borderRadius: 10, fontSize: 12, color: C.bad, fontWeight: 600 }}>うち内定辞退 {s.offerDec}名</div>}
-      {s.total > 0 && <div style={{ marginTop: 16, padding: "14px 16px", background: C.accent + "10", borderRadius: 10, border: `1px solid ${C.accent}25` }}>
+    {/* ─── 選考概況（ファネル + スピード統合） ─── */}
+    {dt === "overview" && <div>
+      <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 16, marginBottom: 16 }}>
+        {/* 左: ファネル */}
+        <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
+          <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 20px" }}>選考ファネル</h3>
+          <TrapezoidFunnel stages={funnelStages} onDrillDown={true} />
+          {s.offerDec > 0 && <div style={{ marginTop: 12, padding: "8px 14px", background: C.badBg, borderRadius: 10, fontSize: 12, color: C.bad, fontWeight: 600 }}>うち内定辞退 {s.offerDec}名</div>}
+        </div>
+        {/* 右: スピード */}
+        <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
+          <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 20px" }}>選考スピード</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, justifyItems: "center" }}>
+            <CircularGauge value={s.speeds.toInt1} target={14} label="応募 → 一次" />
+            <CircularGauge value={s.speeds.toIntF} target={28} label="応募 → 最終" />
+            <CircularGauge value={s.speeds.toOffer} target={35} label="応募 → 内定" />
+            <CircularGauge value={s.speeds.total} target={42} label="応募 → 承諾" />
+          </div>
+        </div>
+      </div>
+      {/* 採用効率 */}
+      {s.total > 0 && <div style={{ padding: "14px 16px", background: C.accent + "10", borderRadius: 10, border: `1px solid ${C.accent}25`, marginBottom: 16 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: C.accentL, marginBottom: 8 }}>採用効率</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
           <div style={{ textAlign: "center" }}><div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{s.iFP > 0 ? Math.round(s.total / s.iFP) : "–"}</div><div style={{ fontSize: 10, color: C.textSub }}>応募/内定（1名内定に必要な応募数）</div></div>
           <div style={{ textAlign: "center" }}><div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{(s.accepted + s.entered) > 0 ? Math.round(s.total / (s.accepted + s.entered)) : "–"}</div><div style={{ fontSize: 10, color: C.textSub }}>応募/入社（1名入社に必要な応募数）</div></div>
           <div style={{ textAlign: "center" }}><div style={{ fontSize: 22, fontWeight: 800, color: C.text }}>{s.docP > 0 ? Math.round(s.total / s.docP) : "–"}</div><div style={{ fontSize: 10, color: C.textSub }}>応募/書類通過</div></div>
         </div>
       </div>}
-      {Object.keys(s.rejectReasons).length > 0 && <div style={{ marginTop: 20, padding: "14px 16px", background: C.surfaceAlt, borderRadius: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>お見送り理由の傾向</div>
-        {Object.entries(s.rejectReasons).sort((a, b) => b[1] - a[1]).map(([r, cnt]) => {
-          const mx = Math.max(...Object.values(s.rejectReasons));
-          return <div key={r} style={{ marginBottom: 6 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2, fontSize: 12, color: C.textSub }}><span>{r}</span><span style={{ fontWeight: 700 }}>{cnt}件</span></div>
-            <div style={{ height: 6, background: C.bg, borderRadius: 3 }}><div style={{ height: "100%", width: `${(cnt / mx) * 100}%`, background: C.bad, borderRadius: 3, transition: "width .4s" }} /></div>
-          </div>;
-        })}
-      </div>}
-      {Object.keys(s.passReasons).length > 0 && <div style={{ marginTop: 14, padding: "14px 16px", background: C.surfaceAlt, borderRadius: 10 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>通過理由の傾向</div>
-        {Object.entries(s.passReasons).sort((a, b) => b[1] - a[1]).map(([r, cnt]) => {
-          const mx = Math.max(...Object.values(s.passReasons));
-          return <div key={r} style={{ marginBottom: 6 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2, fontSize: 12, color: C.textSub }}><span>{r}</span><span style={{ fontWeight: 700 }}>{cnt}件</span></div>
-            <div style={{ height: 6, background: C.bg, borderRadius: 3 }}><div style={{ height: "100%", width: `${(cnt / mx) * 100}%`, background: C.ok, borderRadius: 3, transition: "width .4s" }} /></div>
-          </div>;
-        })}
-      </div>}
-    </div>}
-
-    {/* ─── スピード（円形ゲージ） ─── */}
-    {dt === "speed" && <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
-      <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 20px" }}>選考スピード分析</h3>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, justifyItems: "center" }}>
-        <CircularGauge value={s.speeds.toInt1} target={14} label="応募 → 一次面接" />
-        <CircularGauge value={s.speeds.toIntF} target={28} label="応募 → 最終面接" />
-        <CircularGauge value={s.speeds.toOffer} target={35} label="応募 → 内定" />
-        <CircularGauge value={s.speeds.total} target={42} label="応募 → 承諾" />
+      {/* 理由の傾向 */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        {Object.keys(s.rejectReasons).length > 0 && <div style={{ padding: "14px 16px", background: C.surfaceAlt, borderRadius: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>お見送り理由の傾向</div>
+          {Object.entries(s.rejectReasons).sort((a, b) => b[1] - a[1]).map(([r, cnt]) => {
+            const mx = Math.max(...Object.values(s.rejectReasons));
+            return <div key={r} style={{ marginBottom: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2, fontSize: 12, color: C.textSub }}><span>{r}</span><span style={{ fontWeight: 700 }}>{cnt}件</span></div>
+              <div style={{ height: 6, background: C.bg, borderRadius: 3 }}><div style={{ height: "100%", width: `${(cnt / mx) * 100}%`, background: C.bad, borderRadius: 3, transition: "width .4s" }} /></div>
+            </div>;
+          })}
+        </div>}
+        {Object.keys(s.passReasons).length > 0 && <div style={{ padding: "14px 16px", background: C.surfaceAlt, borderRadius: 10 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>通過理由の傾向</div>
+          {Object.entries(s.passReasons).sort((a, b) => b[1] - a[1]).map(([r, cnt]) => {
+            const mx = Math.max(...Object.values(s.passReasons));
+            return <div key={r} style={{ marginBottom: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2, fontSize: 12, color: C.textSub }}><span>{r}</span><span style={{ fontWeight: 700 }}>{cnt}件</span></div>
+              <div style={{ height: 6, background: C.bg, borderRadius: 3 }}><div style={{ height: "100%", width: `${(cnt / mx) * 100}%`, background: C.ok, borderRadius: 3, transition: "width .4s" }} /></div>
+            </div>;
+          })}
+        </div>}
       </div>
     </div>}
 
@@ -1178,27 +1271,29 @@ function AnalyticsView({ candidates, use2nd }) {
       </div>}
     </div>}
 
-    {dt === "position" && <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
-      <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>職種別分析</h3>
-      {Object.entries(s.byPos).sort((a, b) => b[1].applied - a[1].applied).map(([pos, d]) => {
-        const mx = Math.max(...Object.values(s.byPos).map(x => x.applied), 1);
-        return <div key={pos} style={{ background: C.surfaceAlt, borderRadius: 12, padding: "16px 18px", border: `1px solid ${C.border}`, marginBottom: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}><span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{pos}</span><span style={{ fontSize: 22, fontWeight: 800, color: C.accent }}>{d.applied}</span></div>
-          <div style={{ height: 8, background: C.bg, borderRadius: 4, marginBottom: 12 }}><div style={{ height: "100%", width: `${(d.applied / mx) * 100}%`, background: `linear-gradient(90deg, ${C.accent}, ${C.accentL})`, borderRadius: 4 }} /></div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-            {[{ l: "書類通過", v: d.docPass }, { l: "内定", v: d.offer }, { l: "承諾", v: d.accepted }, { l: "選考中", v: d.inProc }].map(k => <div key={k.l} style={{ textAlign: "center" }}><div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{k.v}</div><div style={{ fontSize: 10, color: C.textDim }}>{k.l}</div></div>)}
-          </div>
-          {d.inProc === 0 && d.offer === 0 && <div style={{ marginTop: 8, padding: "6px 10px", background: C.warnBg, borderRadius: 8, fontSize: 11, color: C.warn, fontWeight: 600 }}>⚠ 選考中・内定者なし</div>}
-        </div>;
-      })}
-    </div>}
-
-    {dt === "pipeline" && <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
-      <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>パイプライン（{s.inProc.length}名）</h3>
-      {s.inProc.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.textDim }}>選考中なし</div> :
-        <div style={{ display: "grid", gap: 6 }}>{s.inProc.sort((a, b) => STATUS_LIST.indexOf(a.status) - STATUS_LIST.indexOf(b.status)).map(c => <div key={c.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 130px 90px 50px", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
-          <span style={{ color: C.text, fontWeight: 600 }}>{c.name}</span><span style={{ color: C.textSub }}>{c.position?.slice(0, 10)}</span><Badge status={c.status} /><span style={{ color: C.textSub }}>{c.source}</span><DaysChip days={daysStalled(c)} />
-        </div>)}</div>}
+    {/* ─── 詳細（職種別 + パイプライン統合） ─── */}
+    {dt === "detail" && <div style={{ display: "grid", gap: 16 }}>
+      <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
+        <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>職種別分析</h3>
+        {Object.entries(s.byPos).sort((a, b) => b[1].applied - a[1].applied).map(([pos, d]) => {
+          const mx = Math.max(...Object.values(s.byPos).map(x => x.applied), 1);
+          return <div key={pos} style={{ background: C.surfaceAlt, borderRadius: 12, padding: "16px 18px", border: `1px solid ${C.border}`, marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}><span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{pos}</span><span style={{ fontSize: 22, fontWeight: 800, color: C.accent }}>{d.applied}</span></div>
+            <div style={{ height: 8, background: C.bg, borderRadius: 4, marginBottom: 12 }}><div style={{ height: "100%", width: `${(d.applied / mx) * 100}%`, background: `linear-gradient(90deg, ${C.accent}, ${C.accentL})`, borderRadius: 4 }} /></div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+              {[{ l: "書類通過", v: d.docPass }, { l: "内定", v: d.offer }, { l: "承諾", v: d.accepted }, { l: "選考中", v: d.inProc }].map(k => <div key={k.l} style={{ textAlign: "center" }}><div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{k.v}</div><div style={{ fontSize: 10, color: C.textDim }}>{k.l}</div></div>)}
+            </div>
+            {d.inProc === 0 && d.offer === 0 && <div style={{ marginTop: 8, padding: "6px 10px", background: C.warnBg, borderRadius: 8, fontSize: 11, color: C.warn, fontWeight: 600 }}>⚠ 選考中・内定者なし</div>}
+          </div>;
+        })}
+      </div>
+      <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}` }}>
+        <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>パイプライン（{s.inProc.length}名）</h3>
+        {s.inProc.length === 0 ? <div style={{ textAlign: "center", padding: 30, color: C.textDim }}>選考中なし</div> :
+          <div style={{ display: "grid", gap: 6 }}>{s.inProc.sort((a, b) => STATUS_LIST.indexOf(a.status) - STATUS_LIST.indexOf(b.status)).map(c => <div key={c.id} style={{ display: "grid", gridTemplateColumns: "90px 1fr 130px 90px 50px", gap: 8, padding: "10px 12px", background: C.surfaceAlt, borderRadius: 10, fontSize: 12, alignItems: "center", border: `1px solid ${C.border}` }}>
+            <span style={{ color: C.text, fontWeight: 600 }}>{c.name}</span><span style={{ color: C.textSub }}>{c.position?.slice(0, 10)}</span><Badge status={c.status} /><span style={{ color: C.textSub }}>{c.source}</span><DaysChip days={daysStalled(c)} />
+          </div>)}</div>}
+      </div>
     </div>}
 
     {/* ─── 推移分析 ─── */}
