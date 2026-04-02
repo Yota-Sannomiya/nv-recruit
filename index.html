@@ -972,6 +972,15 @@ function KanbanView({ candidates, onSelect, onStatusChange, use2nd }) {
 // ─── Interview View ───
 function InterviewView({ candidates, onSelect, use2nd }) {
   const today = new Date().toISOString().slice(0, 10);
+
+  const TYPE_META = {
+    "カジュアル": { label: "カジュアル面談", color: "#a78bfa", icon: "☕" },
+    "一次": { label: "一次面接", color: "#f59e0b", icon: "1" },
+    "二次": { label: "二次面接", color: "#e879f9", icon: "2" },
+    "最終": { label: "最終面接", color: "#06b6d4", icon: "★" },
+  };
+  const typeOrder = use2nd ? ["カジュアル", "一次", "二次", "最終"] : ["カジュアル", "一次", "最終"];
+
   const upcoming = useMemo(() => {
     const r = [];
     candidates.forEach(c => {
@@ -982,6 +991,13 @@ function InterviewView({ candidates, onSelect, use2nd }) {
     });
     return r.sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || "")));
   }, [candidates, today, use2nd]);
+
+  const upcomingByType = useMemo(() => {
+    const m = {};
+    typeOrder.forEach(t => m[t] = []);
+    upcoming.forEach(it => { if (m[it.type]) m[it.type].push(it); });
+    return m;
+  }, [upcoming, use2nd]);
 
   const past = useMemo(() => {
     const r = [];
@@ -994,33 +1010,75 @@ function InterviewView({ candidates, onSelect, use2nd }) {
     return r.sort((a, b) => b.date.localeCompare(a.date));
   }, [candidates, use2nd]);
 
+  const pastByType = useMemo(() => {
+    const m = {};
+    typeOrder.forEach(t => m[t] = []);
+    past.forEach(it => { if (m[it.type]) m[it.type].push(it); });
+    return m;
+  }, [past, use2nd]);
+
   const resultColor = (r) => {
     if (r === "合格" || r === "応募意思あり") return { bg: C.okBg, color: C.ok };
     if (r === "不合格" || r === "応募意思なし" || r === "見送り") return { bg: C.badBg, color: C.bad };
     return { bg: C.warnBg, color: C.warn };
   };
 
-  return <div>
-    <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 10 }}>今後の面接・面談（{upcoming.length}件）</h3>
-    {upcoming.length === 0 && <p style={{ color: C.textDim, fontSize: 12 }}>予定なし</p>}
-    <div style={{ display: "grid", gap: 6, marginBottom: 24 }}>{upcoming.map((it, i) => <div key={it.id + it.type + i} onClick={() => onSelect(it)} style={{ background: C.card, borderRadius: 12, padding: "12px 14px", border: `1px solid ${C.border}`, cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}
-      onMouseEnter={e => e.currentTarget.style.borderColor = C.accent + "50"} onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
-      <div style={{ minWidth: 48, textAlign: "center", background: C.accentD + "28", borderRadius: 10, padding: "7px 4px" }}><div style={{ fontSize: 17, fontWeight: 800, color: C.accentL }}>{it.date.slice(8)}</div><div style={{ fontSize: 9, color: C.textSub }}>{it.date.slice(5, 7)}月</div></div>
-      <div style={{ flex: 1 }}><div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 3 }}>{it.name}</div><div style={{ fontSize: 11, color: C.textSub }}>{it.type}面接　{fmtDateTime(it.date, it.time)}　{it.who || "担当未設定"}</div></div>
-      <Badge status={it.status} />
-    </div>)}</div>
+  const TypeBadge = ({ type }) => {
+    const m = TYPE_META[type];
+    return <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 8, background: m.color + "20", color: m.color }}>
+      <span style={{ fontSize: 10 }}>{m.icon}</span>{m.label}
+    </span>;
+  };
 
-    <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 10 }}>面接・面談結果（直近{Math.min(past.length, 20)}件）</h3>
-    <div style={{ display: "grid", gap: 6 }}>{past.slice(0, 20).map((it, i) => {
-      const rc = resultColor(it.result);
-      return <div key={it.id + it.type + i} onClick={() => onSelect(it)} style={{ background: C.card, borderRadius: 10, padding: "10px 14px", border: `1px solid ${C.border}`, cursor: "pointer" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}><span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{it.name}</span><span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: rc.bg, color: rc.color }}>{it.result}</span></div>
-        <div style={{ fontSize: 11, color: C.textSub }}>{it.type}面接　{fmtDate(it.date)}</div>
-        {it.passReason && <div style={{ fontSize: 11, color: C.ok, marginTop: 3 }}>通過理由: {it.passReason}</div>}
-        {it.rejectReason && <div style={{ fontSize: 11, color: C.bad, marginTop: 3 }}>お見送り理由: {it.rejectReason}</div>}
-        {it.note && <div style={{ fontSize: 11, color: C.textDim, marginTop: 3 }}>所感: {it.note}</div>}
+  const SectionHeader = ({ type, count }) => {
+    const m = TYPE_META[type];
+    return <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, marginTop: 16 }}>
+      <div style={{ width: 4, height: 18, borderRadius: 2, background: m.color }} />
+      <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{m.label}</span>
+      <span style={{ fontSize: 11, fontWeight: 600, color: m.color, background: m.color + "18", padding: "1px 8px", borderRadius: 10 }}>{count}件</span>
+    </div>;
+  };
+
+  return <div>
+    <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 4 }}>今後の面接・面談（{upcoming.length}件）</h3>
+    {upcoming.length === 0 && <p style={{ color: C.textDim, fontSize: 12 }}>予定なし</p>}
+    {typeOrder.map(type => {
+      const items = upcomingByType[type];
+      if (!items || items.length === 0) return null;
+      const m = TYPE_META[type];
+      return <div key={type}>
+        <SectionHeader type={type} count={items.length} />
+        <div style={{ display: "grid", gap: 6 }}>{items.map((it, i) => <div key={it.id + it.type + i} onClick={() => onSelect(it)} style={{ background: C.card, borderRadius: 12, padding: "12px 14px", border: `1px solid ${C.border}`, borderLeft: `3px solid ${m.color}`, cursor: "pointer", display: "flex", alignItems: "center", gap: 14 }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = m.color + "60"} onMouseLeave={e => { e.currentTarget.style.borderColor = C.border; e.currentTarget.style.borderLeftColor = m.color; }}>
+          <div style={{ minWidth: 48, textAlign: "center", background: m.color + "18", borderRadius: 10, padding: "7px 4px" }}><div style={{ fontSize: 17, fontWeight: 800, color: m.color }}>{it.date.slice(8)}</div><div style={{ fontSize: 9, color: C.textSub }}>{it.date.slice(5, 7)}月</div></div>
+          <div style={{ flex: 1 }}><div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}><span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{it.name}</span><TypeBadge type={it.type} /></div><div style={{ fontSize: 11, color: C.textSub }}>{fmtDateTime(it.date, it.time)}　{it.who || "担当未設定"}</div></div>
+          <Badge status={it.status} />
+        </div>)}</div>
       </div>;
-    })}</div>
+    })}
+
+    <div style={{ marginTop: 28 }}>
+    <h3 style={{ color: C.text, fontSize: 14, fontWeight: 700, marginBottom: 4 }}>面接・面談結果（直近{Math.min(past.length, 20)}件）</h3>
+    {typeOrder.map(type => {
+      const items = pastByType[type];
+      if (!items || items.length === 0) return null;
+      const m = TYPE_META[type];
+      const shown = items.slice(0, 10);
+      return <div key={type}>
+        <SectionHeader type={type} count={items.length} />
+        <div style={{ display: "grid", gap: 6 }}>{shown.map((it, i) => {
+          const rc = resultColor(it.result);
+          return <div key={it.id + it.type + i} onClick={() => onSelect(it)} style={{ background: C.card, borderRadius: 10, padding: "10px 14px", border: `1px solid ${C.border}`, borderLeft: `3px solid ${m.color}`, cursor: "pointer" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}><div style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{it.name}</span><TypeBadge type={it.type} /></div><span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 10, background: rc.bg, color: rc.color }}>{it.result}</span></div>
+            <div style={{ fontSize: 11, color: C.textSub }}>{fmtDate(it.date)}</div>
+            {it.passReason && <div style={{ fontSize: 11, color: C.ok, marginTop: 3 }}>通過理由: {it.passReason}</div>}
+            {it.rejectReason && <div style={{ fontSize: 11, color: C.bad, marginTop: 3 }}>お見送り理由: {it.rejectReason}</div>}
+            {it.note && <div style={{ fontSize: 11, color: C.textDim, marginTop: 3 }}>所感: {it.note}</div>}
+          </div>;
+        })}</div>
+      </div>;
+    })}
+    </div>
   </div>;
 }
 
