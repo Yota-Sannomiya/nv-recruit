@@ -1086,7 +1086,7 @@ function InterviewView({ candidates, onSelect, use2nd }) {
 function AnalyticsView({ candidates, use2nd }) {
   const [dt, setDt] = useState("overview");
   const [funnelDetail, setFunnelDetail] = useState(null);
-  const [periodStart, setPeriodStart] = useState("");
+  const [periodStart, setPeriodStart] = useState(() => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`; });
   const [periodEnd, setPeriodEnd] = useState("");
   const [chHover, setChHover] = useState(null);
 
@@ -1112,7 +1112,7 @@ function AnalyticsView({ candidates, use2nd }) {
   const presets = useMemo(() => {
     const now = new Date();
     const y = now.getFullYear(), m = now.getMonth();
-    const fmt = (d) => d.toISOString().slice(0, 10);
+    const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     const lastDay = (yr, mo) => new Date(yr, mo + 1, 0);
     return [
       { label: "今月", start: fmt(new Date(y, m, 1)), end: "" },
@@ -1128,7 +1128,7 @@ function AnalyticsView({ candidates, use2nd }) {
   const prevRange = useMemo(() => {
     const now = new Date();
     const y = now.getFullYear(), m = now.getMonth();
-    const fmt = (d) => d.toISOString().slice(0, 10);
+    const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
     const lastDay = (yr, mo) => new Date(yr, mo + 1, 0);
     if (activePreset === "今月") return { start: fmt(new Date(y, m - 1, 1)), end: fmt(lastDay(y, m - 1)) };
     if (activePreset === "先月") return { start: fmt(new Date(y, m - 2, 1)), end: fmt(lastDay(y, m - 2)) };
