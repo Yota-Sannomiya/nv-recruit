@@ -1095,9 +1095,11 @@ function AnalyticsView({ candidates, use2nd }) {
   // ─── 期間フィルター ───
   const filtered = useMemo(() => {
     return candidates.filter(c => {
-      if (!c.appliedDate) return true;
-      if (periodStart && c.appliedDate < periodStart) return false;
-      if (periodEnd && c.appliedDate > periodEnd) return false;
+      if (periodStart || periodEnd) {
+        if (!c.appliedDate) return false;
+        if (periodStart && c.appliedDate < periodStart) return false;
+        if (periodEnd && c.appliedDate > periodEnd) return false;
+      }
       return true;
     });
   }, [candidates, periodStart, periodEnd]);
