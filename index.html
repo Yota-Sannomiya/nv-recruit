@@ -99,13 +99,13 @@ const emptyCandidate = () => ({
   interviewFinalResult: "", interviewFinalPassReason: "", interviewFinalRejectReason: "", interviewFinalNote: "",
   // 内定
   offerDate: "", offerTime: "",
-  accepted: "", withdrawReason: "",
+  accepted: "", acceptedDate: "", withdrawReason: "",
   startDate: "",
 });
 
 // ─── Utility ───
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
-const DATE_FIELDS = ["appliedDate", "statusChangedDate", "casualDate", "interview1Date", "interview2Date", "interviewFinalDate", "offerDate", "startDate"];
+const DATE_FIELDS = ["appliedDate", "statusChangedDate", "casualDate", "interview1Date", "interview2Date", "interviewFinalDate", "offerDate", "acceptedDate", "startDate"];
 const TIME_FIELDS = ["casualTime", "interview1Time", "interview2Time", "interviewFinalTime", "offerTime"];
 function normalizeDate(v) {
   if (!v) return "";
@@ -321,6 +321,23 @@ function computeInterviewer1Monthly(allCandidates) {
     else data[who][ym].scheduled++;
   });
   return { data, months: i1Months };
+}
+
+// 内定承諾日ベースの月間承諾数（直近3ヶ月・期間フィルター無視）
+function computeAcceptanceMonthly(allCandidates) {
+  const today = new Date();
+  const months = [];
+  for (let i = 2; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    months.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, label: `${d.getMonth() + 1}月` });
+  }
+  const counts = {}; months.forEach(m => counts[m.key] = []);
+  allCandidates.forEach(c => {
+    if (!c.acceptedDate) return;
+    const ym = c.acceptedDate.slice(0, 7);
+    if (counts[ym]) counts[ym].push(c);
+  });
+  return { months, counts };
 }
 
 const statusColor = (s) => {
@@ -844,6 +861,7 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew, use2nd
         <CalendarPicker label="オファー面談日" value={c.offerDate} onChange={v => u("offerDate", v)} />
         <SFl label="オファー面談時間" value={c.offerTime} onChange={v => u("offerTime", v)} options={TIME_SLOTS} />
         <SFl label="承諾状況" value={c.accepted} onChange={v => u("accepted", v)} options={["承諾", "辞退", "検討中"]} />
+        <CalendarPicker label="内定承諾日" value={c.acceptedDate} onChange={v => u("acceptedDate", v)} />
         <SFl label="辞退理由" value={c.withdrawReason} onChange={v => u("withdrawReason", v)} options={WITHDRAW_REASONS} />
         <CalendarPicker label="入社予定日" value={c.startDate} onChange={v => u("startDate", v)} />
       </div>
@@ -1215,6 +1233,7 @@ function AnalyticsView({ candidates, use2nd, setCandidates, bulkSave }) {
   const s = useMemo(() => computeStats(filtered, use2nd), [filtered, use2nd]);
   const prevS = useMemo(() => prevFiltered ? computeStats(prevFiltered, use2nd) : null, [prevFiltered, use2nd]);
   const i1m = useMemo(() => computeInterviewer1Monthly(candidates), [candidates]);
+  const accM = useMemo(() => computeAcceptanceMonthly(candidates), [candidates]);
 
   const funnelStages = useMemo(() => {
     const base = [
@@ -1297,6 +1316,28 @@ function AnalyticsView({ candidates, use2nd, setCandidates, bulkSave }) {
             <CircularGauge value={s.speeds.toOffer} target={35} label="応募 → 内定" />
             <CircularGauge value={s.speeds.total} target={42} label="応募 → 承諾" />
           </div>
+        </div>
+      </div>
+      {/* 月間内定承諾数（承諾日ベース） */}
+      <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}`, marginBottom: 16 }}>
+        <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>月間内定承諾数</h3>
+        <div style={{ color: C.textDim, fontSize: 11, marginBottom: 16, lineHeight: 1.6 }}>
+          <div>■ 集計方法: 内定承諾日（acceptedDate）の月で集計（応募月ではなく承諾月でカウント）</div>
+          <div>■ 対象: 直近3ヶ月（当月含む） / 目標 月{TARGETS.accepted}名 / 上部の期間フィルターは適用されません</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          {accM.months.map(m => {
+            const list = accM.counts[m.key] || [];
+            const cnt = list.length;
+            const hit = cnt >= TARGETS.accepted;
+            const col = hit ? C.ok : cnt > 0 ? C.warn : C.textDim;
+            return <div key={m.key} onClick={() => cnt > 0 && setFunnelDetail({ label: `${m.label} 内定承諾（${cnt}名）`, list })} style={{ background: C.surfaceAlt, borderRadius: 12, padding: "16px 14px", border: `1px solid ${hit ? C.ok + "55" : C.border}`, textAlign: "center", cursor: cnt > 0 ? "pointer" : "default" }}>
+              <div style={{ fontSize: 12, color: C.textSub, fontWeight: 600, marginBottom: 6 }}>{m.label}</div>
+              <div style={{ fontSize: 34, fontWeight: 800, color: col, lineHeight: 1 }}>{cnt}<span style={{ fontSize: 13, color: C.textDim, fontWeight: 600 }}> / {TARGETS.accepted}名</span></div>
+              <div style={{ marginTop: 8, height: 6, background: C.bg, borderRadius: 3 }}><div style={{ height: "100%", width: `${Math.min((cnt / TARGETS.accepted) * 100, 100)}%`, background: col, borderRadius: 3, transition: "width .4s" }} /></div>
+              <div style={{ marginTop: 8, fontSize: 11, fontWeight: 700, color: col }}>{hit ? "✓ 目標達成" : `あと${Math.max(TARGETS.accepted - cnt, 0)}名`}</div>
+            </div>;
+          })}
         </div>
       </div>
       {/* 職種別応募数 */}
