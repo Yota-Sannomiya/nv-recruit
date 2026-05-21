@@ -1299,6 +1299,27 @@ function AnalyticsView({ candidates, use2nd, setCandidates, bulkSave }) {
           </div>
         </div>
       </div>
+      {/* 職種別応募数 */}
+      <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}`, marginBottom: 16 }}>
+        <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 16px" }}>職種別応募数</h3>
+        {(() => {
+          const posColors = ["#3b82f6", "#8b5cf6", "#06b6d4", "#22c55e", "#f59e0b", "#ec4899"];
+          const entries = Object.entries(s.byPos).sort((a, b) => b[1].applied - a[1].applied);
+          if (entries.length === 0) return <div style={{ textAlign: "center", color: C.textDim, padding: 20, fontSize: 13 }}>この期間の応募データなし</div>;
+          const mx = Math.max(...entries.map(([, d]) => d.applied), 1);
+          return <div style={{ display: "grid", gap: 10 }}>{entries.map(([pos, d], idx) => {
+            const col = posColors[idx % posColors.length];
+            const pct = s.total > 0 ? Math.round((d.applied / s.total) * 100) : 0;
+            return <div key={pos} onClick={() => showFunnel(`${pos}（応募）`, c => (c.position || "不明") === pos)} style={{ cursor: "pointer" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{pos}</span>
+                <span style={{ fontSize: 12, color: C.textSub }}><span style={{ fontSize: 16, fontWeight: 800, color: col }}>{d.applied}</span> 名 <span style={{ color: C.textDim }}>({pct}%)</span></span>
+              </div>
+              <div style={{ height: 10, background: C.bg, borderRadius: 5 }}><div style={{ height: "100%", width: `${Math.max((d.applied / mx) * 100, 2)}%`, background: col, borderRadius: 5, transition: "width .4s" }} /></div>
+            </div>;
+          })}</div>;
+        })()}
+      </div>
       {/* 採用効率 */}
       {s.total > 0 && <div style={{ padding: "14px 16px", background: C.accent + "10", borderRadius: 10, border: `1px solid ${C.accent}25`, marginBottom: 16 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: C.accentL, marginBottom: 8 }}>採用効率</div>
