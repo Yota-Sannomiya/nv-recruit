@@ -1289,6 +1289,48 @@ function AnalyticsView({ candidates, use2nd }) {
           })}
         </div>}
       </div>
+      {/* 一次面接官別 月間実施数（直近3ヶ月） */}
+      <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}`, marginTop: 16 }}>
+        <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>一次面接官別 月間面接数</h3>
+        <div style={{ color: C.textDim, fontSize: 11, marginBottom: 16 }}>直近3ヶ月 / 一次面接日ベース / <span style={{ color: C.ok }}>■実施済</span>（結果入力済み） + <span style={{ color: C.warn }}>■予定</span>（日程確定・未実施）</div>
+        {(() => {
+          const interviewers = Object.keys(s.interviewer1Monthly).sort((a, b) => {
+            const ta = Object.values(s.interviewer1Monthly[a]).reduce((sum, v) => sum + v.done + v.scheduled, 0);
+            const tb = Object.values(s.interviewer1Monthly[b]).reduce((sum, v) => sum + v.done + v.scheduled, 0);
+            return tb - ta;
+          });
+          if (interviewers.length === 0) return <div style={{ textAlign: "center", color: C.textDim, padding: 24, fontSize: 13 }}>直近3ヶ月の一次面接データなし</div>;
+          return <div style={{ overflowX: "auto" }}>
+            <div style={{ display: "grid", gridTemplateColumns: `120px repeat(${s.i1Months.length}, 1fr) 80px`, gap: 8, padding: "6px 0", borderBottom: `2px solid ${C.border}`, fontSize: 10, color: C.textDim, fontWeight: 700 }}>
+              <span>面接官</span>
+              {s.i1Months.map(m => <span key={m.key} style={{ textAlign: "center" }}>{m.label}</span>)}
+              <span style={{ textAlign: "center" }}>合計</span>
+            </div>
+            {interviewers.map((who, idx) => {
+              const row = s.interviewer1Monthly[who];
+              const totalDone = s.i1Months.reduce((sum, m) => sum + (row[m.key]?.done || 0), 0);
+              const totalSch = s.i1Months.reduce((sum, m) => sum + (row[m.key]?.scheduled || 0), 0);
+              return <div key={who} style={{ display: "grid", gridTemplateColumns: `120px repeat(${s.i1Months.length}, 1fr) 80px`, gap: 8, padding: "10px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13, background: idx % 2 === 0 ? "transparent" : C.bg + "40", alignItems: "center" }}>
+                <span style={{ color: C.text, fontWeight: 600 }}>{who}</span>
+                {s.i1Months.map(m => {
+                  const v = row[m.key] || { done: 0, scheduled: 0 };
+                  const empty = v.done === 0 && v.scheduled === 0;
+                  return <span key={m.key} style={{ textAlign: "center", fontSize: 13, color: empty ? C.textDim : C.text }}>
+                    {empty ? "—" : <>
+                      <span style={{ color: C.ok, fontWeight: 700 }}>{v.done}</span>
+                      {v.scheduled > 0 && <span style={{ color: C.warn, fontWeight: 600, fontSize: 11 }}> +{v.scheduled}</span>}
+                    </>}
+                  </span>;
+                })}
+                <span style={{ textAlign: "center", color: C.text, fontWeight: 700 }}>
+                  <span style={{ color: C.ok }}>{totalDone}</span>
+                  {totalSch > 0 && <span style={{ color: C.warn, fontSize: 11 }}> +{totalSch}</span>}
+                </span>
+              </div>;
+            })}
+          </div>;
+        })()}
+      </div>
     </div>}
 
     {/* ─── チャネル別（ホバー＋交互行） ─── */}
@@ -1448,48 +1490,6 @@ function AnalyticsView({ candidates, use2nd }) {
           </div>
         </div>
 
-        {/* 一次面接官別 月間実施数（直近3ヶ月） */}
-        <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}`, marginTop: 20 }}>
-          <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>一次面接官別 月間面接数</h3>
-          <div style={{ color: C.textDim, fontSize: 11, marginBottom: 16 }}>直近3ヶ月 / 一次面接日ベース / <span style={{ color: C.ok }}>■実施済</span>（結果入力済み） + <span style={{ color: C.warn }}>■予定</span>（日程確定・未実施）</div>
-          {(() => {
-            const interviewers = Object.keys(s.interviewer1Monthly).sort((a, b) => {
-              const ta = Object.values(s.interviewer1Monthly[a]).reduce((sum, v) => sum + v.done + v.scheduled, 0);
-              const tb = Object.values(s.interviewer1Monthly[b]).reduce((sum, v) => sum + v.done + v.scheduled, 0);
-              return tb - ta;
-            });
-            if (interviewers.length === 0) return <div style={{ textAlign: "center", color: C.textDim, padding: 24, fontSize: 13 }}>直近3ヶ月の一次面接データなし</div>;
-            return <div style={{ overflowX: "auto" }}>
-              <div style={{ display: "grid", gridTemplateColumns: `120px repeat(${s.i1Months.length}, 1fr) 80px`, gap: 8, padding: "6px 0", borderBottom: `2px solid ${C.border}`, fontSize: 10, color: C.textDim, fontWeight: 700 }}>
-                <span>面接官</span>
-                {s.i1Months.map(m => <span key={m.key} style={{ textAlign: "center" }}>{m.label}</span>)}
-                <span style={{ textAlign: "center" }}>合計</span>
-              </div>
-              {interviewers.map((who, idx) => {
-                const row = s.interviewer1Monthly[who];
-                const totalDone = s.i1Months.reduce((sum, m) => sum + (row[m.key]?.done || 0), 0);
-                const totalSch = s.i1Months.reduce((sum, m) => sum + (row[m.key]?.scheduled || 0), 0);
-                return <div key={who} style={{ display: "grid", gridTemplateColumns: `120px repeat(${s.i1Months.length}, 1fr) 80px`, gap: 8, padding: "10px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13, background: idx % 2 === 0 ? "transparent" : C.bg + "40", alignItems: "center" }}>
-                  <span style={{ color: C.text, fontWeight: 600 }}>{who}</span>
-                  {s.i1Months.map(m => {
-                    const v = row[m.key] || { done: 0, scheduled: 0 };
-                    const empty = v.done === 0 && v.scheduled === 0;
-                    return <span key={m.key} style={{ textAlign: "center", fontSize: 13, color: empty ? C.textDim : C.text }}>
-                      {empty ? "—" : <>
-                        <span style={{ color: C.ok, fontWeight: 700 }}>{v.done}</span>
-                        {v.scheduled > 0 && <span style={{ color: C.warn, fontWeight: 600, fontSize: 11 }}> +{v.scheduled}</span>}
-                      </>}
-                    </span>;
-                  })}
-                  <span style={{ textAlign: "center", color: C.text, fontWeight: 700 }}>
-                    <span style={{ color: C.ok }}>{totalDone}</span>
-                    {totalSch > 0 && <span style={{ color: C.warn, fontSize: 11 }}> +{totalSch}</span>}
-                  </span>
-                </div>;
-              })}
-            </div>;
-          })()}
-        </div>
       </div>}
     </div>}
 
