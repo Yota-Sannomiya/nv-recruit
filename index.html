@@ -291,6 +291,12 @@ function computeStats(filtered, use2nd) {
   return { total, casual, docP, i1D, i1P, i2D, i2P, iFD, iFP, accepted, entered, offerDec, allDec, bySrc, byPos, decList, inProc, monthly, speeds: { toInt1: avg(speeds.toInt1), toIntF: avg(speeds.toIntF), toOffer: avg(speeds.toOffer), total: avg(speeds.total) }, rejectReasons, passReasons, withdrawReasons, withdrawTimings };
 }
 
+// 面接官名の正規化（末尾の敬称・空白を除去して同一人物としてカウント）
+function normalizeInterviewer(name) {
+  if (!name) return "";
+  return name.trim().replace(/\s+/g, "").replace(/(さん|サン|ｻﾝ|様|さま)$/, "");
+}
+
 // 一次面接官別 月間実施数（直近3ヶ月、interview1Date基準・期間フィルター無視）
 function computeInterviewer1Monthly(allCandidates) {
   const today = new Date();
@@ -305,7 +311,8 @@ function computeInterviewer1Monthly(allCandidates) {
     if (!c.interview1Date || !c.interviewer1) return;
     const ym = c.interview1Date.slice(0, 7);
     if (!keys.includes(ym)) return;
-    const who = c.interviewer1;
+    const who = normalizeInterviewer(c.interviewer1);
+    if (!who) return;
     if (!data[who]) data[who] = {};
     if (!data[who][ym]) data[who][ym] = { done: 0, scheduled: 0 };
     if (c.interview1Result) data[who][ym].done++;
