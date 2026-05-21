@@ -1296,7 +1296,11 @@ function AnalyticsView({ candidates, use2nd }) {
       {/* 一次面接官別 月間実施数（直近3ヶ月） */}
       <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}`, marginTop: 16 }}>
         <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>一次面接官別 月間面接数</h3>
-        <div style={{ color: C.textDim, fontSize: 11, marginBottom: 16 }}>直近3ヶ月 / 一次面接日ベース（期間フィルターは適用されません）</div>
+        <div style={{ color: C.textDim, fontSize: 11, marginBottom: 16, lineHeight: 1.6 }}>
+          <div>■ 集計方法: 一次面接日（interview1Date）の月で集計 / 一次面接官（interviewer1）ごとにカウント</div>
+          <div>■ 対象: 直近3ヶ月（当月含む） / 結果入力の有無に関わらず日程が入っているものは1件としてカウント</div>
+          <div>■ ダッシュボード上部の期間フィルター（応募日ベース）は適用されません</div>
+        </div>
         {(() => {
           const interviewers = Object.keys(i1m.data).sort((a, b) => {
             const ta = Object.values(i1m.data[a]).reduce((sum, v) => sum + v.done + v.scheduled, 0);
