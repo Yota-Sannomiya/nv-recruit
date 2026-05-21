@@ -52,7 +52,8 @@ const KANBAN_COLUMNS_ALL = [
   { key: "入社", statuses: ["入社済み"], color: "#6366f1" },
 ];
 
-const POSITIONS = ["デジタルマーケティング", "HubSpotコンサル", "営業"];
+const POSITIONS = ["デジタルマーケティング", "HubSpotコンサル", "HubSpotエンジニア", "セールス"];
+const POSITION_ALIASES = { "営業": "セールス" };
 const SOURCES = [
   // スカウト媒体
   "AMBI", "ビズリーチ", "doda", "Green", "Wantedly", "Pitta",
@@ -128,6 +129,7 @@ function normalizeCandidateDates(c) {
   const out = { ...c };
   for (const k of DATE_FIELDS) { if (out[k]) out[k] = normalizeDate(out[k]); }
   for (const k of TIME_FIELDS) { if (out[k]) out[k] = normalizeTime(out[k]); }
+  if (out.position && POSITION_ALIASES[out.position]) out.position = POSITION_ALIASES[out.position];
   return out;
 }
 function fmtDate(dateStr) {
@@ -1636,7 +1638,8 @@ function findCol(headers, ...kw) { return headers.findIndex(h => { const hl = (h
 
 function csvToCandidate(row, hIdx) {
   const g = (i) => i >= 0 && i < row.length ? (row[i] || "").trim() : "";
-  return { ...emptyCandidate(), name: g(hIdx.name), status: mapStatus(g(hIdx.status)), position: g(hIdx.position) || "デジタルマーケティング", source: g(hIdx.source), appliedDate: parseDate(g(hIdx.appliedDate)) || new Date().toISOString().slice(0, 10), interviewer1: g(hIdx.interviewer1), interview1Date: parseDate(g(hIdx.int1Date)), interview1Time: parseTime(g(hIdx.int1Time)), interview1Result: g(hIdx.int1Result), interview1Note: g(hIdx.int1Note), interviewFinalDate: parseDate(g(hIdx.intFDate)), interviewFinalTime: parseTime(g(hIdx.intFTime)), interviewFinalResult: g(hIdx.intFResult), interviewFinalNote: g(hIdx.intFNote), memo: g(hIdx.memo) };
+  const pos = g(hIdx.position) || "デジタルマーケティング";
+  return { ...emptyCandidate(), name: g(hIdx.name), status: mapStatus(g(hIdx.status)), position: POSITION_ALIASES[pos] || pos, source: g(hIdx.source), appliedDate: parseDate(g(hIdx.appliedDate)) || new Date().toISOString().slice(0, 10), interviewer1: g(hIdx.interviewer1), interview1Date: parseDate(g(hIdx.int1Date)), interview1Time: parseTime(g(hIdx.int1Time)), interview1Result: g(hIdx.int1Result), interview1Note: g(hIdx.int1Note), interviewFinalDate: parseDate(g(hIdx.intFDate)), interviewFinalTime: parseTime(g(hIdx.intFTime)), interviewFinalResult: g(hIdx.intFResult), interviewFinalNote: g(hIdx.intFNote), memo: g(hIdx.memo) };
 }
 
 function detectColumns(headers) {
