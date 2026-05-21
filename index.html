@@ -1114,9 +1114,38 @@ function InterviewView({ candidates, onSelect, use2nd }) {
 }
 
 // ─── Analytics ───
-function AnalyticsView({ candidates, use2nd }) {
+function AnalyticsView({ candidates, use2nd, setCandidates, bulkSave }) {
   const [dt, setDt] = useState("overview");
   const [funnelDetail, setFunnelDetail] = useState(null);
+  const [cleanupModal, setCleanupModal] = useState(null);
+
+  const previewCleanup = useCallback(() => {
+    const fields = ["casualInterviewer", "interviewer1", "interviewer2", "interviewerFinal"];
+    const changes = [];
+    const updated = [];
+    candidates.forEach(c => {
+      const next = { ...c };
+      let changed = false;
+      fields.forEach(f => {
+        const v = c[f];
+        if (!v) return;
+        const norm = normalizeInterviewer(v);
+        if (norm && norm !== v) { next[f] = norm; changed = true; changes.push({ id: c.id, name: c.name, field: f, from: v, to: norm }); }
+      });
+      if (changed) updated.push(next);
+    });
+    if (updated.length === 0) { alert("敬称付きの面接官名は見つかりませんでした"); return; }
+    setCleanupModal({ changes, updated });
+  }, [candidates]);
+
+  const applyCleanup = useCallback(async () => {
+    if (!cleanupModal) return;
+    const ids = new Set(cleanupModal.updated.map(c => c.id));
+    setCandidates(p => p.map(c => ids.has(c.id) ? cleanupModal.updated.find(u => u.id === c.id) : c));
+    setCleanupModal(null);
+    await bulkSave(cleanupModal.updated, "append");
+  }, [cleanupModal, setCandidates, bulkSave]);
+
   const [periodStart, setPeriodStart] = useState(() => { const n=new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-01`; });
   const [periodEnd, setPeriodEnd] = useState("");
   const [chHover, setChHover] = useState(null);
@@ -1302,7 +1331,10 @@ function AnalyticsView({ candidates, use2nd }) {
       </div>
       {/* 一次面接官別 月間実施数（直近3ヶ月） */}
       <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}`, marginTop: 16 }}>
-        <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>一次面接官別 月間面接数</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: 0 }}>一次面接官別 月間面接数</h3>
+          <button onClick={previewCleanup} style={{ ...btnS, background: C.surfaceAlt, color: C.textSub, padding: "5px 10px", fontSize: 11, border: `1px solid ${C.border}` }}>面接官名の敬称を一括削除</button>
+        </div>
         <div style={{ color: C.textDim, fontSize: 11, marginBottom: 16, lineHeight: 1.6 }}>
           <div>■ 集計方法: 一次面接日（interview1Date）の月で集計 / 一次面接官（interviewer1）ごとにカウント</div>
           <div>■ 対象: 直近3ヶ月（当月含む） / 結果入力の有無に関わらず日程が入っているものは1件としてカウント</div>
@@ -1511,6 +1543,33 @@ function AnalyticsView({ candidates, use2nd }) {
               <td style={{ padding: "8px 8px" }}><Badge status={c.status} /></td>
             </tr>)}</tbody>
           </table>)}
+    </Modal>
+
+    <Modal open={!!cleanupModal} onClose={() => setCleanupModal(null)} title="面接官名の敬称を一括削除" width={560}>
+      {cleanupModal && <div>
+        <div style={{ marginBottom: 14, fontSize: 13, color: C.textSub }}>
+          以下の <strong style={{ color: C.text }}>{cleanupModal.updated.length}名</strong>（{cleanupModal.changes.length}箇所）の面接官名から敬称を削除します。実行するとサーバーに保存されます。
+        </div>
+        <div style={{ maxHeight: 360, overflowY: "auto", border: `1px solid ${C.border}`, borderRadius: 10, padding: "4px 0" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead><tr style={{ background: C.surfaceAlt }}>
+              {["候補者", "項目", "変更"].map(h => <th key={h} style={{ textAlign: "left", padding: "6px 10px", fontSize: 10, color: C.textDim, fontWeight: 700 }}>{h}</th>)}
+            </tr></thead>
+            <tbody>{cleanupModal.changes.map((ch, idx) => {
+              const fieldLabel = { casualInterviewer: "カジュアル面談担当", interviewer1: "一次面接官", interviewer2: "二次面接官", interviewerFinal: "最終面接官" }[ch.field] || ch.field;
+              return <tr key={idx} style={{ borderTop: `1px solid ${C.border}22` }}>
+                <td style={{ padding: "6px 10px", color: C.text }}>{ch.name}</td>
+                <td style={{ padding: "6px 10px", color: C.textDim, fontSize: 11 }}>{fieldLabel}</td>
+                <td style={{ padding: "6px 10px", color: C.text }}><span style={{ color: C.bad }}>{ch.from}</span> → <span style={{ color: C.ok, fontWeight: 700 }}>{ch.to}</span></td>
+              </tr>;
+            })}</tbody>
+          </table>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+          <button onClick={() => setCleanupModal(null)} style={{ ...btnS, background: C.surfaceAlt, color: C.textSub, border: `1px solid ${C.border}` }}>キャンセル</button>
+          <button onClick={applyCleanup} style={{ ...btnS, background: C.accent, color: "#fff" }}>実行</button>
+        </div>
+      </div>}
     </Modal>
   </div>;
 }
@@ -1737,7 +1796,7 @@ function App() {
       {tab === "list" && <ListView candidates={candidates} onSelect={openEdit} onAdd={openNew} onImport={() => setImportOpen(true)} onExport={handleExport} onBulkStatus={handleBulkStatus} onBulkDelete={handleBulkDelete} />}
       {tab === "kanban" && <KanbanView candidates={candidates} onSelect={openEdit} onStatusChange={handleSC} use2nd={use2nd} />}
       {tab === "interview" && <InterviewView candidates={candidates} onSelect={openEdit} use2nd={use2nd} />}
-      {tab === "analytics" && <AnalyticsView candidates={candidates} use2nd={use2nd} />}
+      {tab === "analytics" && <AnalyticsView candidates={candidates} use2nd={use2nd} setCandidates={setCandidates} bulkSave={bulkSave} />}
     </div>
     <Modal open={!!modal} onClose={() => { setModal(null); setEditC(null); }} title={modal?.mode === "new" ? "候補者を追加" : `${editC?.name || ""} を編集`}>
       {editC && <CandidateForm candidate={editC} onChange={setEditC} onSave={handleSave} onDelete={handleDel} isNew={modal?.mode === "new"} use2nd={use2nd} />}
