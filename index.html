@@ -54,22 +54,46 @@ const KANBAN_COLUMNS_ALL = [
 
 const POSITIONS = ["デジタルマーケティング", "HubSpotコンサル", "HubSpotエンジニア", "セールス", "人事・採用担当"];
 const POSITION_ALIASES = { "営業": "セールス" };
-const SOURCES = [
-  // スカウト媒体
-  "AMBI", "ビズリーチ", "doda", "Green", "Wantedly", "Pitta",
-  // エージェント
-  "circus", "Crowd Agent", "Zキャリア", "リクルート", "マイナビ",
-  "エン・ジャパン", "マスメディアン", "パーソルキャリア", "キャリアデザインセンター",
-  "SHIFT", "みらいワークス", "ミツカル", "トレオン", "LIBZ",
-  "キャリアスタート", "ミギナナメウエ", "アサイン", "ポテンシャライト", "ワークポート",
-  "Hagakure", "opinio", "アデコ", "blankpad", "ヤマトヒューマンキャピタル",
-  "チアキャリア", "Izulu", "デザイナーBOX", "TREX", "StockSun", "GeaR",
-  "Emake", "アジャストベアーズナビ", "cocotto", "OnlyX", "イノセル",
-  "スプリックス", "ベネッセスタイルケア", "Mirise up", "GEEKLY", "Careeeer",
-  "タグミー", "フェローシップ", "マルワークス", "BOX", "UZUZ",
-  // 自社・その他
-  "HP応募（自社）", "その他", "不明",
-];
+const SOURCE_GROUPS = {
+  "スカウト媒体": [
+    "AMBI", "ビズリーチ", "doda", "Green", "Wantedly", "Pitta",
+  ],
+  "エージェント": [
+    "circus", "Crowd Agent", "Zキャリア", "リクルート", "マイナビ",
+    "エン・ジャパン", "マスメディアン", "パーソルキャリア", "キャリアデザインセンター",
+    "SHIFT", "みらいワークス", "ミツカル", "トレオン", "LIBZ",
+    "キャリアスタート", "ミギナナメウエ", "アサイン", "ポテンシャライト", "ワークポート",
+    "Hagakure", "opinio", "アデコ", "blankpad", "ヤマトヒューマンキャピタル",
+    "チアキャリア", "Izulu", "デザイナーBOX", "TREX", "StockSun", "GeaR",
+    "Emake", "アジャストベアーズナビ", "cocotto", "OnlyX", "イノセル",
+    "スプリックス", "ベネッセスタイルケア", "Mirise up", "GEEKLY", "Careeeer",
+    "タグミー", "フェローシップ", "マルワークス", "BOX", "UZUZ",
+  ],
+  "自社・その他": [
+    "HP応募（自社）", "その他", "不明",
+  ],
+};
+const SOURCES = Object.values(SOURCE_GROUPS).flat();
+const SOURCE_UNCATEGORIZED = "未分類";
+const SOURCE_GROUP_COLORS = { "スカウト媒体": "#3b82f6", "エージェント": "#8b5cf6", "自社・その他": "#22c55e", [SOURCE_UNCATEGORIZED]: "#9496a8" };
+const SOURCE_EMPTY_LABEL = "（未入力）";
+// 経由 → 区分（未入力・選択肢にない経由名は「未分類」）
+function sourceGroupOf(src) {
+  if (!src) return SOURCE_UNCATEGORIZED;
+  return Object.keys(SOURCE_GROUPS).find(g => SOURCE_GROUPS[g].includes(src)) || SOURCE_UNCATEGORIZED;
+}
+// 区分ごとに { total, sources: { 経由名: 候補者[] } } へ集計（区分は定義順＋未分類）
+function groupBySource(list) {
+  const groups = {};
+  [...Object.keys(SOURCE_GROUPS), SOURCE_UNCATEGORIZED].forEach(g => groups[g] = { total: 0, sources: {} });
+  list.forEach(c => {
+    const g = sourceGroupOf(c.source);
+    const name = c.source || SOURCE_EMPTY_LABEL;
+    groups[g].total++;
+    (groups[g].sources[name] = groups[g].sources[name] || []).push(c);
+  });
+  return groups;
+}
 const INTERVIEWERS = ["今村", "田開", "髙山", "三宮", "市嶋", "小池", "畠山", "原田", "ミギナナメウエ", "その他"];
 const REJECT_REASONS = ["スキル不足", "経験不足", "カルチャー不一致", "コミュニケーション", "希望条件不一致", "年齢", "学歴", "その他"];
 const WITHDRAW_REASONS = ["他社決定", "現職残留", "条件不一致", "ギャップ", "選考スピード", "志望度低下", "家庭事情", "不明", "その他"];
@@ -339,6 +363,19 @@ function computeAcceptanceMonthly(allCandidates) {
     if (counts[ym]) counts[ym].push(c);
   });
   return { months, counts };
+}
+
+// 応募日ベースの経由別 月間流入数（直近3ヶ月・期間フィルター無視）
+function computeSourceMonthly(allCandidates) {
+  const today = new Date();
+  const months = [];
+  for (let i = 2; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+    months.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`, label: `${d.getMonth() + 1}月` });
+  }
+  const keys = months.map(m => m.key);
+  const inRange = allCandidates.filter(c => c.appliedDate && keys.includes(c.appliedDate.slice(0, 7)));
+  return { months, groups: groupBySource(inRange) };
 }
 
 const statusColor = (s) => {
@@ -1235,6 +1272,8 @@ function AnalyticsView({ candidates, use2nd, setCandidates, bulkSave }) {
   const prevS = useMemo(() => prevFiltered ? computeStats(prevFiltered, use2nd) : null, [prevFiltered, use2nd]);
   const i1m = useMemo(() => computeInterviewer1Monthly(candidates), [candidates]);
   const accM = useMemo(() => computeAcceptanceMonthly(candidates), [candidates]);
+  const srcG = useMemo(() => groupBySource(filtered), [filtered]);
+  const srcM = useMemo(() => computeSourceMonthly(candidates), [candidates]);
 
   const funnelStages = useMemo(() => {
     const base = [
@@ -1362,6 +1401,82 @@ function AnalyticsView({ candidates, use2nd, setCandidates, bulkSave }) {
               <div style={{ height: 10, background: C.bg, borderRadius: 5 }}><div style={{ height: "100%", width: `${Math.max((d.applied / mx) * 100, 2)}%`, background: col, borderRadius: 5, transition: "width .4s" }} /></div>
             </div>;
           })}</div>;
+        })()}
+      </div>
+      {/* 経由別流入数（期間フィルター適用） */}
+      <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}`, marginBottom: 16 }}>
+        <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>経由別流入数</h3>
+        <div style={{ color: C.textDim, fontSize: 11, marginBottom: 16, lineHeight: 1.6 }}>
+          <div>■ 集計方法: 上部の期間フィルター（応募日ベース）を適用 / カジュアル面談を含む全候補者をカウント</div>
+          <div>■ 未入力・選択肢にない経由名は「未分類」 / 流入0件の経由は非表示</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 18 }}>
+          {Object.entries(srcG).map(([g, d]) => {
+            const col = SOURCE_GROUP_COLORS[g];
+            const pct = s.total > 0 ? Math.round((d.total / s.total) * 100) : 0;
+            return <div key={g} onClick={() => d.total > 0 && setFunnelDetail({ label: `${g}（流入）`, list: Object.values(d.sources).flat() })} style={{ background: C.surfaceAlt, borderRadius: 12, padding: "12px 14px", borderLeft: `3px solid ${col}`, cursor: d.total > 0 ? "pointer" : "default" }}>
+              <div style={{ fontSize: 11, color: C.textSub, fontWeight: 600 }}>{g}</div>
+              <div style={{ marginTop: 4 }}><span style={{ fontSize: 24, fontWeight: 800, color: d.total > 0 ? col : C.textDim }}>{d.total}</span><span style={{ fontSize: 11, color: C.textDim }}> 名 ({pct}%)</span></div>
+            </div>;
+          })}
+        </div>
+        {(() => {
+          const entries = Object.entries(srcG).flatMap(([g, d]) => Object.entries(d.sources).map(([nm, list]) => ({ g, nm, list }))).sort((a, b) => b.list.length - a.list.length);
+          if (entries.length === 0) return <div style={{ textAlign: "center", color: C.textDim, padding: 24, fontSize: 13 }}>期間内の流入なし</div>;
+          const mx = Math.max(...entries.map(e => e.list.length), 1);
+          return <div style={{ display: "grid", gap: 8 }}>{entries.map(({ g, nm, list }) => {
+            const col = SOURCE_GROUP_COLORS[g];
+            const pct = s.total > 0 ? Math.round((list.length / s.total) * 100) : 0;
+            return <div key={`${g}-${nm}`} onClick={() => setFunnelDetail({ label: `${nm}（流入）`, list })} style={{ display: "grid", gridTemplateColumns: "150px 1fr 90px", gap: 10, alignItems: "center", cursor: "pointer" }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${nm}（${g}）`}>{nm}</span>
+              <div style={{ height: 8, background: C.bg, borderRadius: 4 }}><div style={{ height: "100%", width: `${Math.max((list.length / mx) * 100, 2)}%`, background: col, borderRadius: 4, transition: "width .4s" }} /></div>
+              <span style={{ fontSize: 12, color: C.textSub, textAlign: "right" }}><span style={{ fontSize: 14, fontWeight: 800, color: col }}>{list.length}</span> 名 <span style={{ color: C.textDim }}>({pct}%)</span></span>
+            </div>;
+          })}</div>;
+        })()}
+      </div>
+      {/* 経由別 月間流入数（直近3ヶ月） */}
+      <div style={{ background: C.card, borderRadius: 16, padding: "24px 20px", border: `1px solid ${C.border}`, marginBottom: 16 }}>
+        <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: "0 0 6px" }}>経由別 月間流入数</h3>
+        <div style={{ color: C.textDim, fontSize: 11, marginBottom: 16, lineHeight: 1.6 }}>
+          <div>■ 集計方法: 応募日（appliedDate）の月で集計 / カジュアル面談を含む全候補者をカウント</div>
+          <div>■ 対象: 直近3ヶ月（当月含む） / ダッシュボード上部の期間フィルターは適用されません</div>
+        </div>
+        {(() => {
+          const cols = `160px repeat(${srcM.months.length}, 1fr) 80px`;
+          const countBy = (list) => srcM.months.map(m => list.filter(c => c.appliedDate.slice(0, 7) === m.key).length);
+          const Cell = ({ v, color, bold }) => <span style={{ textAlign: "center", color: v === 0 ? C.textDim : color, fontWeight: bold && v > 0 ? 800 : v > 0 ? 700 : 400 }}>{v === 0 ? "—" : v}</span>;
+          const groups = Object.entries(srcM.groups).filter(([, d]) => d.total > 0);
+          if (groups.length === 0) return <div style={{ textAlign: "center", color: C.textDim, padding: 24, fontSize: 13 }}>直近3ヶ月の流入データなし</div>;
+          const allList = groups.flatMap(([, d]) => Object.values(d.sources).flat());
+          return <div style={{ overflowX: "auto" }}><div style={{ minWidth: 420 }}>
+            <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8, padding: "6px", borderLeft: "3px solid transparent", borderBottom: `2px solid ${C.border}`, fontSize: 10, color: C.textDim, fontWeight: 700 }}>
+              <span>経由</span>
+              {srcM.months.map(m => <span key={m.key} style={{ textAlign: "center" }}>{m.label}</span>)}
+              <span style={{ textAlign: "center" }}>合計</span>
+            </div>
+            {groups.map(([g, d]) => {
+              const col = SOURCE_GROUP_COLORS[g];
+              const srcRows = Object.entries(d.sources).sort((a, b) => b[1].length - a[1].length);
+              return <div key={g}>
+                <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8, padding: "9px 6px", borderBottom: `1px solid ${C.border}`, fontSize: 13, background: col + "14", borderLeft: `3px solid ${col}`, alignItems: "center" }}>
+                  <span style={{ color: col, fontWeight: 800 }}>{g}</span>
+                  {countBy(Object.values(d.sources).flat()).map((v, i) => <Cell key={i} v={v} color={col} bold />)}
+                  <span style={{ textAlign: "center", color: col, fontWeight: 800 }}>{d.total}</span>
+                </div>
+                {srcRows.map(([nm, list]) => <div key={nm} style={{ display: "grid", gridTemplateColumns: cols, gap: 8, padding: "7px 6px", borderLeft: "3px solid transparent", borderBottom: `1px solid ${C.border}`, fontSize: 12, alignItems: "center" }}>
+                  <span style={{ paddingLeft: 12, color: C.textSub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={nm}>{nm}</span>
+                  {countBy(list).map((v, i) => <Cell key={i} v={v} color={C.text} />)}
+                  <span style={{ textAlign: "center", color: C.text, fontWeight: 700 }}>{list.length}</span>
+                </div>)}
+              </div>;
+            })}
+            <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8, padding: "10px 6px", borderLeft: "3px solid transparent", borderTop: `2px solid ${C.border}`, fontSize: 13, alignItems: "center" }}>
+              <span style={{ color: C.text, fontWeight: 800 }}>合計</span>
+              {countBy(allList).map((v, i) => <Cell key={i} v={v} color={C.accentL} bold />)}
+              <span style={{ textAlign: "center", color: C.accent, fontWeight: 800 }}>{allList.length}</span>
+            </div>
+          </div></div>;
         })()}
       </div>
       {/* 採用効率 */}
