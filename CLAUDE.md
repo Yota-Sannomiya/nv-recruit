@@ -30,7 +30,7 @@ All components are defined inline in a single `<script type="text/babel">` block
 2. **KanbanView** — Drag-target columns by recruitment stage (9 columns from カジュアル面談 to 入社)
 3. **InterviewView** — Calendar-style weekly view of upcoming interviews
 4. **AnalyticsView** — KPI cards, funnel chart, source/position breakdowns, monthly trends
-5. **AgentView** — エージェント別の月間KPI（職種別）と実績（応募日ベース、応募時positionで集計）の差分管理。KPI・注力区分はagentsシートに保存
+5. **AgentView** — エージェント（`SOURCE_CATEGORIES.agent` の社のみ）別の月間KPI（職種別）と実績（応募日ベース、応募時positionで集計）の差分管理。KPI・注力区分はagentsシートに保存
 
 Core shared components: `Modal`, `Badge`, `DaysChip`, `CalendarPicker`, `CandidateForm`, form field helpers (`Fl`, `IFl`, `SFl`, `CFl`, `TFl`).
 
@@ -43,6 +43,10 @@ The color theme object `C` defines the dark-mode palette used throughout all inl
 ## Candidate Data Model
 
 Each candidate object is created by `emptyCandidate()` and flows through statuses defined in `STATUS_LIST` (21 statuses across 9 stages). The `KANBAN_COLUMNS` array maps statuses to board columns. Status changes record `statusChangedDate` for stale-tracking.
+
+## Sources (経由)
+
+`SOURCE_CATEGORIES` defines each source's category: scout（スカウト媒体）/ platform（エージェントプラットフォーム）/ agent（エージェント）/ other（自社・その他）. `SOURCE_CATEGORY_OF` maps name → category, and `SOURCES` / `SOURCE_GROUPS` are derived from it. Legacy names are normalized via `SOURCE_ALIASES` (on load and CSV import).
 
 ## CSV Import/Export
 

@@ -56,33 +56,47 @@ const KANBAN_COLUMNS_ALL = [
 
 const POSITIONS = ["マーケ総合職", "マーケティングコンサル", "HubSpotコンサル", "HubSpotエンジニア", "セールスコンサル", "Webエンジニア", "Webデザイナー", "人事"];
 const POSITION_ALIASES = { "デジタルマーケティング": "マーケ総合職", "マーケ即戦力": "マーケティングコンサル", "セールス": "セールスコンサル", "営業": "セールスコンサル", "人事・採用担当": "人事" };
-const SOURCE_GROUPS = {
-  "スカウト媒体": [
+// 経由のカテゴリ定義（scout=スカウト媒体 / platform=エージェントプラットフォーム / agent=エージェント / other=自社・その他）
+// エージェント管理タブのKPI対象は agent のみ
+const SOURCE_CATEGORIES = {
+  scout: { label: "スカウト媒体", color: "#3b82f6", sources: [
     "AMBI", "ビズリーチ", "doda", "Green", "Wantedly", "Pitta",
-  ],
-  "エージェント": [
-    "circus", "Crowd Agent", "Zキャリア", "リクルート", "マイナビ",
-    "エン・ジャパン", "マスメディアン", "パーソルキャリア", "キャリアデザインセンター",
-    "SHIFT", "みらいワークス", "ミツカル", "トレオン", "LIBZ",
-    "キャリアスタート", "ミギナナメウエ", "アサイン", "ポテンシャライト", "ワークポート",
-    "Hagakure", "opinio", "アデコ", "blankpad", "ヤマトヒューマンキャピタル",
-    "チアキャリア", "Izulu", "デザイナーBOX", "TREX", "StockSun", "GeaR",
-    "Emake", "アジャストベアーズナビ", "cocotto", "OnlyX", "イノセル",
-    "スプリックス", "ベネッセスタイルケア", "Mirise up", "GEEKLY", "Careeeer",
-    "タグミー", "フェローシップ", "マルワークス", "BOX", "UZUZ",
-  ],
-  "自社・その他": [
+  ] },
+  platform: { label: "エージェントプラットフォーム", color: "#f59e0b", sources: [
+    "circus", "Crowd Agent", "Zキャリア", "リクナビHRTech",
+  ] },
+  agent: { label: "エージェント", color: "#8b5cf6", sources: [
+    "GEEKLY", "マスメディアン", "エン・ジャパン", "タグミー", "フェローシップ", "マルワークス", "BOX",
+    "イノセル", "Mirise up", "SaleSeed", "アクロスタッフ", "富士ヒューマンテック", "リクルート", "OnlyX",
+    "Careeeer", "UZUZ", "アジャスト", "cocotto", "GeaREmake", "StockSun", "TREX", "Izul", "チアキャリア",
+    "blankpad", "Opinio", "Hagakure", "ワークポート", "キャリアスタート", "アカリク", "アサイン", "SHIFT",
+    "みらいワークス", "ポテンシャライト", "ミツカル", "パーソルキャリア", "マイナビ", "トレオン", "アデコ",
+    "ミギナナメウエ", "LIBZ", "エムエム総研", "キャリアデザインセンター",
+  ] },
+  other: { label: "自社・その他", color: "#22c55e", sources: [
     "HP応募（自社）", "その他", "不明",
-  ],
+  ] },
 };
+// 経由名 → カテゴリキー
+const SOURCE_CATEGORY_OF = Object.fromEntries(Object.entries(SOURCE_CATEGORIES).flatMap(([k, v]) => v.sources.map(src => [src, k])));
+const AGENT_SOURCES = SOURCE_CATEGORIES.agent.sources;
+// 旧経由名 → 新経由名（読み込み時・CSVインポート時に変換）
+const SOURCE_ALIASES = {
+  "GeaR": "GeaREmake", "Emake": "GeaREmake", "Izulu": "Izul", "デザイナーBOX": "BOX",
+  "アジャストベアーズナビ": "アジャスト", "インフラトップ（マケキャン）": "SHIFT", "インフラトップ": "SHIFT",
+  "opinio": "Opinio", "インディードリクルートパートナーズ": "リクルート",
+};
+const normalizeSource = (src) => SOURCE_ALIASES[src] || src;
+// ダッシュボード表示用：区分ラベル → 経由名一覧
+const SOURCE_GROUPS = Object.fromEntries(Object.values(SOURCE_CATEGORIES).map(v => [v.label, v.sources]));
 const SOURCES = Object.values(SOURCE_GROUPS).flat();
 const SOURCE_UNCATEGORIZED = "未分類";
-const SOURCE_GROUP_COLORS = { "スカウト媒体": "#3b82f6", "エージェント": "#8b5cf6", "自社・その他": "#22c55e", [SOURCE_UNCATEGORIZED]: "#9496a8" };
+const SOURCE_GROUP_COLORS = { ...Object.fromEntries(Object.values(SOURCE_CATEGORIES).map(v => [v.label, v.color])), [SOURCE_UNCATEGORIZED]: "#9496a8" };
 const SOURCE_EMPTY_LABEL = "（未入力）";
-// 経由 → 区分（未入力・選択肢にない経由名は「未分類」）
+// 経由 → 区分ラベル（未入力・選択肢にない経由名は「未分類」）
 function sourceGroupOf(src) {
-  if (!src) return SOURCE_UNCATEGORIZED;
-  return Object.keys(SOURCE_GROUPS).find(g => SOURCE_GROUPS[g].includes(src)) || SOURCE_UNCATEGORIZED;
+  const k = SOURCE_CATEGORY_OF[src];
+  return k ? SOURCE_CATEGORIES[k].label : SOURCE_UNCATEGORIZED;
 }
 // 区分ごとに { total, sources: { 経由名: 候補者[] } } へ集計（区分は定義順＋未分類）
 function groupBySource(list) {
@@ -157,6 +171,7 @@ function normalizeCandidateDates(c) {
   for (const k of DATE_FIELDS) { if (out[k]) out[k] = normalizeDate(out[k]); }
   for (const k of TIME_FIELDS) { if (out[k]) out[k] = normalizeTime(out[k]); }
   if (out.position && POSITION_ALIASES[out.position]) out.position = POSITION_ALIASES[out.position];
+  if (out.source) out.source = normalizeSource(out.source);
   return out;
 }
 function fmtDate(dateStr) {
@@ -1823,7 +1838,7 @@ function findCol(headers, ...kw) { return headers.findIndex(h => { const hl = (h
 function csvToCandidate(row, hIdx) {
   const g = (i) => i >= 0 && i < row.length ? (row[i] || "").trim() : "";
   const pos = g(hIdx.position) || "マーケ総合職";
-  return { ...emptyCandidate(), name: g(hIdx.name), status: mapStatus(g(hIdx.status)), position: POSITION_ALIASES[pos] || pos, source: g(hIdx.source), appliedDate: parseDate(g(hIdx.appliedDate)) || new Date().toISOString().slice(0, 10), interviewer1: g(hIdx.interviewer1), interview1Date: parseDate(g(hIdx.int1Date)), interview1Time: parseTime(g(hIdx.int1Time)), interview1Result: g(hIdx.int1Result), interview1Note: g(hIdx.int1Note), interviewFinalDate: parseDate(g(hIdx.intFDate)), interviewFinalTime: parseTime(g(hIdx.intFTime)), interviewFinalResult: g(hIdx.intFResult), interviewFinalNote: g(hIdx.intFNote), memo: g(hIdx.memo) };
+  return { ...emptyCandidate(), name: g(hIdx.name), status: mapStatus(g(hIdx.status)), position: POSITION_ALIASES[pos] || pos, source: normalizeSource(g(hIdx.source)), appliedDate: parseDate(g(hIdx.appliedDate)) || new Date().toISOString().slice(0, 10), interviewer1: g(hIdx.interviewer1), interview1Date: parseDate(g(hIdx.int1Date)), interview1Time: parseTime(g(hIdx.int1Time)), interview1Result: g(hIdx.int1Result), interview1Note: g(hIdx.int1Note), interviewFinalDate: parseDate(g(hIdx.intFDate)), interviewFinalTime: parseTime(g(hIdx.intFTime)), interviewFinalResult: g(hIdx.intFResult), interviewFinalNote: g(hIdx.intFNote), memo: g(hIdx.memo) };
 }
 
 function detectColumns(headers) {
@@ -1961,7 +1976,7 @@ function AgentView({ candidates, pw }) {
   }, [candidates, ym]);
 
   const rows = useMemo(() => {
-    const names = [...new Set([...SOURCE_GROUPS["エージェント"], ...Object.keys(agents)])];
+    const names = AGENT_SOURCES;
     const order = (p) => AGENT_PRIORITIES.indexOf(p);
     return names.map(name => {
       const a = agents[name] || { name, priority: "その他", kpi: {}, memo: "" };
