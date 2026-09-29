@@ -35,6 +35,8 @@ const STATUS_LIST = [
   "内定：オファー面談", "内定：承諾", "内定：辞退", "内定：保留",
   "入社済み",
 ];
+// 一次合格以降のステータス（マーケ総合職のまま通過していないかの警告に使用）
+const STATUS_AFTER_1ST_PASS = ["一次：合格", "二次：調整中", "二次：日程確定", "二次：合格", "適性検査中", "最終：調整中", "最終：日程確定", "最終：合格", "内定：オファー面談", "内定：承諾", "入社済み"];
 const STATUS_2ND = ["二次：調整中", "二次：日程確定", "二次：合格", "二次：不合格", "二次辞退"];
 
 const KANBAN_COLUMNS_ALL = [
@@ -52,8 +54,8 @@ const KANBAN_COLUMNS_ALL = [
   { key: "入社", statuses: ["入社済み"], color: "#6366f1" },
 ];
 
-const POSITIONS = ["マーケ総合職", "マーケ即戦力", "HubSpotコンサル", "HubSpotエンジニア", "セールスコンサル", "Webエンジニア", "Webデザイナー", "人事"];
-const POSITION_ALIASES = { "デジタルマーケティング": "マーケ総合職", "マーケティングコンサル": "マーケ総合職", "セールス": "セールスコンサル", "営業": "セールスコンサル", "人事・採用担当": "人事" };
+const POSITIONS = ["マーケ総合職", "マーケティングコンサル", "HubSpotコンサル", "HubSpotエンジニア", "セールスコンサル", "Webエンジニア", "Webデザイナー", "人事"];
+const POSITION_ALIASES = { "デジタルマーケティング": "マーケ総合職", "マーケ即戦力": "マーケティングコンサル", "セールス": "セールスコンサル", "営業": "セールスコンサル", "人事・採用担当": "人事" };
 const SOURCE_GROUPS = {
   "スカウト媒体": [
     "AMBI", "ビズリーチ", "doda", "Green", "Wantedly", "Pitta",
@@ -113,7 +115,7 @@ const emptyCandidate = () => ({
   docScreeningReason: "", docScreeningNote: "",
   // 一次面接
   interviewer1: "", interview1Date: "", interview1Time: "",
-  interview1Result: "", interview1PassReason: "", interview1RejectReason: "", interview1Note: "",
+  interview1Result: "", interview1PassReason: "", interview1RejectReason: "", interview1Note: "", passedPosition: "",
   // 二次面接
   interviewer2: "", interview2Date: "", interview2Time: "",
   interview2Result: "", interview2PassReason: "", interview2RejectReason: "", interview2Note: "",
@@ -851,7 +853,9 @@ function CandidateForm({ candidate: c, onChange, onSave, onDelete, isNew, use2nd
         <SFl label="面接官" value={c.interviewer1} onChange={v => u("interviewer1", v)} options={INTERVIEWERS} />
         <CalendarPicker label="日程" value={c.interview1Date} onChange={v => u("interview1Date", v)} />
         <SFl label="時間" value={c.interview1Time} onChange={v => u("interview1Time", v)} options={TIME_SLOTS} />
-        <SFl label="合否" value={c.interview1Result} onChange={v => u("interview1Result", v)} options={["合格", "不合格", "保留"]} />
+        <div />
+        <SFl label="合否" value={c.interview1Result} onChange={v => onChange({ ...c, interview1Result: v, passedPosition: v === "合格" && !c.passedPosition ? c.position : c.passedPosition })} options={["合格", "不合格", "保留"]} />
+        <SFl label="通過後職種" value={c.passedPosition} onChange={v => u("passedPosition", v)} options={POSITIONS} />
         <IFl label="通過理由" value={c.interview1PassReason} onChange={v => u("interview1PassReason", v)} placeholder="論理的思考力が高い、等" />
         <SFl label="お見送り理由" value={c.interview1RejectReason} onChange={v => u("interview1RejectReason", v)} options={REJECT_REASONS} />
       </div>
@@ -1829,9 +1833,9 @@ function detectColumns(headers) {
 }
 
 function exportCSV(candidates) {
-  const h = ["氏名","ステータス","ステータス更新日","職種","経由","応募日","年齢","書類URL","カジュアル面談日","カジュアル時間","カジュアル担当","カジュアル結果","カジュアルメモ","書類お見送り理由","面接官(一次)","一次日程","一次時間","一次合否","一次通過理由","一次お見送り理由","一次所感","適性検査送付","適性検査結果","適性検査メモ","面接官(最終)","最終日程","最終時間","最終合否","最終通過理由","最終お見送り理由","最終所感","オファー日","オファー時間","承諾","辞退理由","入社予定日","備考"];
+  const h = ["氏名","ステータス","ステータス更新日","職種","経由","応募日","年齢","書類URL","カジュアル面談日","カジュアル時間","カジュアル担当","カジュアル結果","カジュアルメモ","書類お見送り理由","面接官(一次)","一次日程","一次時間","一次合否","一次通過理由","一次お見送り理由","一次所感","通過後職種","適性検査送付","適性検査結果","適性検査メモ","面接官(最終)","最終日程","最終時間","最終合否","最終通過理由","最終お見送り理由","最終所感","オファー日","オファー時間","承諾","辞退理由","入社予定日","備考"];
   const esc = (v) => { const s = String(v ?? ""); return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s; };
-  const rows = candidates.map(c => [c.name, c.status, c.statusChangedDate, c.position, c.source, c.appliedDate, c.age, c.documentUrl, c.casualDate, c.casualTime, c.casualInterviewer, c.casualResult, c.casualNote, c.docScreeningReason, c.interviewer1, c.interview1Date, c.interview1Time, c.interview1Result, c.interview1PassReason, c.interview1RejectReason, c.interview1Note, c.aptitudeSent, c.aptitudeResult, c.aptitudeNote, c.interviewerFinal, c.interviewFinalDate, c.interviewFinalTime, c.interviewFinalResult, c.interviewFinalPassReason, c.interviewFinalRejectReason, c.interviewFinalNote, c.offerDate, c.offerTime, c.accepted, c.withdrawReason, c.startDate, c.memo].map(esc).join(","));
+  const rows = candidates.map(c => [c.name, c.status, c.statusChangedDate, c.position, c.source, c.appliedDate, c.age, c.documentUrl, c.casualDate, c.casualTime, c.casualInterviewer, c.casualResult, c.casualNote, c.docScreeningReason, c.interviewer1, c.interview1Date, c.interview1Time, c.interview1Result, c.interview1PassReason, c.interview1RejectReason, c.interview1Note, c.passedPosition, c.aptitudeSent, c.aptitudeResult, c.aptitudeNote, c.interviewerFinal, c.interviewFinalDate, c.interviewFinalTime, c.interviewFinalResult, c.interviewFinalPassReason, c.interviewFinalRejectReason, c.interviewFinalNote, c.offerDate, c.offerTime, c.accepted, c.withdrawReason, c.startDate, c.memo].map(esc).join(","));
   return "\uFEFF" + h.join(",") + "\n" + rows.join("\n");
 }
 
@@ -1952,7 +1956,7 @@ function App() {
 
   const openNew = () => { setEditC(emptyCandidate()); setModal({ mode: "new" }); };
   const openEdit = (c) => { setEditC({ ...c }); setModal({ mode: "edit" }); };
-  const handleSave = async () => { if (!editC) return; if (modal.mode === "new") setCandidates(p => [editC, ...p]); else setCandidates(p => p.map(c => c.id === editC.id ? editC : c)); setModal(null); setEditC(null); await saveSingle(editC); };
+  const handleSave = async () => { if (!editC) return; if (STATUS_AFTER_1ST_PASS.includes(editC.status) && editC.position === "マーケ総合職" && (!editC.passedPosition || editC.passedPosition === "マーケ総合職") && !confirm("マーケ総合職のまま通過しています。通過後職種を設定してください。\n\nOK：このまま保存 ／ キャンセル：編集に戻る")) return; if (modal.mode === "new") setCandidates(p => [editC, ...p]); else setCandidates(p => p.map(c => c.id === editC.id ? editC : c)); setModal(null); setEditC(null); await saveSingle(editC); };
   const handleDel = async () => { if (!editC || !confirm("削除しますか？")) return; const id = editC.id; setCandidates(p => p.filter(c => c.id !== id)); setModal(null); setEditC(null); await deleteSingle(id); };
   const handleSC = async (id, st) => { const today = new Date().toISOString().slice(0, 10); const upd = candidates.map(c => c.id === id ? { ...c, status: st, statusChangedDate: today } : c); setCandidates(upd); const t = upd.find(c => c.id === id); if (t) await saveSingle(t); };
   const handleImport = async (data, mode) => { if (mode === "replace") setCandidates(data); else setCandidates(p => [...data, ...p]); await bulkSave(data, mode); };
