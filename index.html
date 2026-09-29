@@ -52,8 +52,8 @@ const KANBAN_COLUMNS_ALL = [
   { key: "入社", statuses: ["入社済み"], color: "#6366f1" },
 ];
 
-const POSITIONS = ["マーケティングコンサル", "HubSpotコンサル", "HubSpotエンジニア", "セールスコンサル", "Webエンジニア", "Webデザイナー", "人事"];
-const POSITION_ALIASES = { "デジタルマーケティング": "マーケティングコンサル", "セールス": "セールスコンサル", "営業": "セールスコンサル", "人事・採用担当": "人事" };
+const POSITIONS = ["マーケ総合職", "マーケ即戦力", "HubSpotコンサル", "HubSpotエンジニア", "セールスコンサル", "Webエンジニア", "Webデザイナー", "人事"];
+const POSITION_ALIASES = { "デジタルマーケティング": "マーケ総合職", "マーケティングコンサル": "マーケ総合職", "セールス": "セールスコンサル", "営業": "セールスコンサル", "人事・採用担当": "人事" };
 const SOURCE_GROUPS = {
   "スカウト媒体": [
     "AMBI", "ビズリーチ", "doda", "Green", "Wantedly", "Pitta",
@@ -103,7 +103,7 @@ const TIME_SLOTS = (() => { const t = []; for (let h = 8; h <= 22; h++) { t.push
 const emptyCandidate = () => ({
   id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
   name: "", status: "書類選考中", statusChangedDate: new Date().toISOString().slice(0, 10),
-  position: "マーケティングコンサル",
+  position: "マーケ総合職",
   source: "", appliedDate: new Date().toISOString().slice(0, 10),
   age: "",
   documentUrl: "", memo: "",
@@ -1818,7 +1818,7 @@ function findCol(headers, ...kw) { return headers.findIndex(h => { const hl = (h
 
 function csvToCandidate(row, hIdx) {
   const g = (i) => i >= 0 && i < row.length ? (row[i] || "").trim() : "";
-  const pos = g(hIdx.position) || "マーケティングコンサル";
+  const pos = g(hIdx.position) || "マーケ総合職";
   return { ...emptyCandidate(), name: g(hIdx.name), status: mapStatus(g(hIdx.status)), position: POSITION_ALIASES[pos] || pos, source: g(hIdx.source), appliedDate: parseDate(g(hIdx.appliedDate)) || new Date().toISOString().slice(0, 10), interviewer1: g(hIdx.interviewer1), interview1Date: parseDate(g(hIdx.int1Date)), interview1Time: parseTime(g(hIdx.int1Time)), interview1Result: g(hIdx.int1Result), interview1Note: g(hIdx.int1Note), interviewFinalDate: parseDate(g(hIdx.intFDate)), interviewFinalTime: parseTime(g(hIdx.intFTime)), interviewFinalResult: g(hIdx.intFResult), interviewFinalNote: g(hIdx.intFNote), memo: g(hIdx.memo) };
 }
 

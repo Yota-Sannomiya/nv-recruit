@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-NV採用管理ツール (NowVillage Recruitment Manager) — a single-page recruitment/ATS tool for managing hiring candidates through a multi-stage pipeline. The app is used internally by NowVillage for 7 positions: マーケティングコンサル, HubSpotコンサル, HubSpotエンジニア, セールスコンサル, Webエンジニア, Webデザイナー, 人事 (defined in `POSITIONS`; legacy names are normalized via `POSITION_ALIASES`).
+NV採用管理ツール (NowVillage Recruitment Manager) — a single-page recruitment/ATS tool for managing hiring candidates through a multi-stage pipeline. The app is used internally by NowVillage for 8 positions: マーケ総合職, マーケ即戦力, HubSpotコンサル, HubSpotエンジニア, セールスコンサル, Webエンジニア, Webデザイナー, 人事 (defined in `POSITIONS`; legacy names are normalized via `POSITION_ALIASES`).
 
 ## Architecture
 
