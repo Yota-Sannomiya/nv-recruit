@@ -1932,7 +1932,7 @@ function AgentView({ candidates, pw }) {
     (async () => {
       try {
         const r = await gasGet(pw, "list_agents");
-        if (!r.ok) { setErrMsg(r.message || "エージェント情報を取得できませんでした"); setLoadState("error"); return; }
+        if (!r.ok) { setErrMsg(r.message || r.error || "エージェント情報を取得できませんでした"); setLoadState("error"); return; }
         const m = {};
         (r.data || []).forEach(a => {
           if (!a.name) return;
