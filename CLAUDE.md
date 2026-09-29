@@ -19,17 +19,18 @@ NV採用管理ツール (NowVillage Recruitment Manager) — a single-page recru
 
 ### Data & Backend
 - Data persists via **Google Apps Script (GAS)** backend — `GAS_URL` constant points to a deployed Apps Script web app.
-- GAS API supports: `auth` (password check), `list` (fetch all), `save` (upsert single), `delete`, `bulk_save`.
+- GAS API supports: `auth` (password check), `list` (fetch all), `save` (upsert single), `delete`, `bulk_save`, `list_agents` / `save_agent` (agents sheet: name, priority, kpi(JSON), memo).
 - Authentication is password-based (entered at login, sent with every API call).
 - `STORAGE_KEY = "nv-recruit-data"` is the localStorage key (used as fallback/cache in the JSX version).
 
 ### UI Structure (index.html)
-All components are defined inline in a single `<script type="text/babel">` block. The app has 4 tabs:
+All components are defined inline in a single `<script type="text/babel">` block. The app has 5 tabs:
 
 1. **ListView** — Filterable/searchable table with bulk operations, CSV import/export
 2. **KanbanView** — Drag-target columns by recruitment stage (9 columns from カジュアル面談 to 入社)
 3. **InterviewView** — Calendar-style weekly view of upcoming interviews
 4. **AnalyticsView** — KPI cards, funnel chart, source/position breakdowns, monthly trends
+5. **AgentView** — エージェント別の月間KPI（職種別）と実績（応募日ベース、応募時positionで集計）の差分管理。KPI・注力区分はagentsシートに保存
 
 Core shared components: `Modal`, `Badge`, `DaysChip`, `CalendarPicker`, `CandidateForm`, form field helpers (`Fl`, `IFl`, `SFl`, `CFl`, `TFl`).
 
