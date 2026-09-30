@@ -214,6 +214,12 @@ const C = {
 
 const TARGETS = { applied: 30, offer: 3, accepted: 2, docPassRate: 50, int1PassRate: 50, avgDays: 35, declineMax: 3 };
 
+// ─── 面接設定状況（定点観測）: GAS側 gas/interviewReport.gs と同じ値を保つこと ───
+const REQUIRED_INTERVIEW1 = 20;
+const REQUIRED_INTERVIEW_FINAL = 4;
+const INTERVIEW_WINDOW_DAYS = 30; // 今日を含む30日間
+const INTERVIEW_EXCLUDED_POSITION = "人事";
+
 const ANALYTICS_STAGE = {
   "カジュアル：書類確認": 0, "カジュアル：書類見送り": 0,
   "カジュアル：調整中": 1, "カジュアル：日程確定": 1, "カジュアル：完了": 2,
@@ -455,6 +461,64 @@ function IFl({ label, value, onChange, type = "text", placeholder = "" }) { retu
 function SFl({ label, value, onChange, options, allowEmpty = true }) { return <Fl label={label}><select value={value || ""} onChange={e => onChange(e.target.value)} style={{ ...inp, appearance: "auto" }}>{allowEmpty && <option value="">--</option>}{options.map(o => <option key={o}>{o}</option>)}</select></Fl>; }
 function CFl({ label, checked, onChange }) { return <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer", fontSize: 12, color: C.text, marginBottom: 6 }}><input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} style={{ accentColor: C.accent, width: 15, height: 15 }} />{label}</label>; }
 function TFl({ label, value, onChange, rows = 2 }) { return <Fl label={label}><textarea value={value || ""} onChange={e => onChange(e.target.value)} rows={rows} style={{ ...inp, resize: "vertical" }} /></Fl>; }
+
+// ─── 面接設定状況 ───
+function computeInterviewSetup(candidates) {
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const now = new Date();
+  const from = fmt(now);
+  const to = fmt(new Date(now.getFullYear(), now.getMonth(), now.getDate() + INTERVIEW_WINDOW_DAYS - 1));
+  const pick = (dateKey, timeKey, resultKey, whoKey) => candidates
+    .filter(c => (POSITION_ALIASES[c.position] || c.position) !== INTERVIEW_EXCLUDED_POSITION)
+    .filter(c => c[dateKey] && c[dateKey] >= from && c[dateKey] <= to && !c[resultKey])
+    .map(c => ({ c, date: c[dateKey], time: c[timeKey] || "", who: c[whoKey] || "" }))
+    .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  return {
+    from, to,
+    i1: pick("interview1Date", "interview1Time", "interview1Result", "interviewer1"),
+    fin: pick("interviewFinalDate", "interviewFinalTime", "interviewFinalResult", "interviewerFinal"),
+  };
+}
+
+function InterviewSetupPanel({ candidates, onSelect }) {
+  const data = useMemo(() => computeInterviewSetup(candidates), [candidates]);
+  const shortDate = (s) => { const d = new Date(s + "T00:00:00"); return `${d.getMonth() + 1}/${d.getDate()}（${WEEKDAYS[d.getDay()]}）`; };
+  const col = (title, color, list, required) => {
+    const diff = list.length - required;
+    const ok = diff >= 0;
+    return <div style={{ background: C.card, borderRadius: 14, padding: "16px 18px", border: `1px solid ${C.border}` }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
+        <span style={{ color, fontSize: 13, fontWeight: 700 }}>{title}</span>
+        <span style={{ color: C.text, fontSize: 13 }}>設定済 <b style={{ fontSize: 20 }}>{list.length}</b>名</span>
+        <span style={{ color: C.textDim, fontSize: 12 }}>／ 必要 {required}名 ／</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: ok ? C.ok : C.bad, background: ok ? C.okBg : C.badBg, padding: "2px 8px", borderRadius: 6 }}>差分 {diff > 0 ? "+" : ""}{diff}</span>
+      </div>
+      {list.length === 0 ? <div style={{ color: C.textDim, fontSize: 12, padding: "8px 0" }}>予定なし</div> :
+        <div style={{ maxHeight: 260, overflowY: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead><tr style={{ color: C.textDim, fontSize: 10, textAlign: "left" }}>{["氏名", "面接日", "時間", "面接官", "職種"].map(h => <th key={h} style={{ padding: "4px 6px", fontWeight: 600, borderBottom: `1px solid ${C.border}` }}>{h}</th>)}</tr></thead>
+            <tbody>{list.map(r => <tr key={r.c.id} onClick={() => onSelect && onSelect(r.c)} style={{ cursor: "pointer", borderBottom: `1px solid ${C.border}` }} onMouseEnter={e => e.currentTarget.style.background = C.surfaceAlt} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <td style={{ padding: "6px", color: C.text, fontWeight: 600, whiteSpace: "nowrap" }}>{r.c.name || "（未入力）"}</td>
+              <td style={{ padding: "6px", color: C.textSub, whiteSpace: "nowrap" }}>{shortDate(r.date)}</td>
+              <td style={{ padding: "6px", color: C.textSub }}>{r.time || "–"}</td>
+              <td style={{ padding: "6px", color: C.textSub }}>{r.who || "–"}</td>
+              <td style={{ padding: "6px", color: C.textSub, whiteSpace: "nowrap" }}>{r.c.position}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>}
+    </div>;
+  };
+  return <div style={{ marginBottom: 24 }}>
+    <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 10 }}>
+      <h3 style={{ color: C.text, fontSize: 15, fontWeight: 700, margin: 0 }}>面接設定状況</h3>
+      <span style={{ color: C.textDim, fontSize: 11 }}>{data.from.replace(/-/g, "/")} 〜 {data.to.replace(/-/g, "/")}（今後{INTERVIEW_WINDOW_DAYS}日・結果未入力・{INTERVIEW_EXCLUDED_POSITION}除外）</span>
+    </div>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+      {col("一次面接", "#f59e0b", data.i1, REQUIRED_INTERVIEW1)}
+      {col("最終面接", "#06b6d4", data.fin, REQUIRED_INTERVIEW_FINAL)}
+    </div>
+  </div>;
+}
 
 function Section({ title, color = C.accentL, children }) {
   return <div style={{ borderTop: `1px solid ${C.border}`, margin: "16px 0", paddingTop: 16 }}>
@@ -1191,7 +1255,7 @@ function InterviewView({ candidates, onSelect, use2nd }) {
 }
 
 // ─── Analytics ───
-function AnalyticsView({ candidates, use2nd, setCandidates, bulkSave }) {
+function AnalyticsView({ candidates, use2nd, setCandidates, bulkSave, onSelect }) {
   const [dt, setDt] = useState("overview");
   const [funnelDetail, setFunnelDetail] = useState(null);
   const [cleanupModal, setCleanupModal] = useState(null);
@@ -1347,6 +1411,9 @@ function AnalyticsView({ candidates, use2nd, setCandidates, bulkSave }) {
       <KPICard label="平均選考日数" value={s.speeds.toOffer !== null ? s.speeds.toOffer + "日" : "–"} sub="応募→内定" icon="⏱" color={C.warn} prev={prevS?.speeds?.toOffer !== null && prevS?.speeds?.toOffer !== undefined ? prevS.speeds.toOffer + "日" : null} invertDelta />
       <KPICard label="辞退" value={s.allDec} sub={s.offerDec > 0 ? `内定辞退 ${s.offerDec}名` : ""} icon="↩" color={C.bad} prev={prevS?.allDec} invertDelta />
     </div>
+
+    {/* ─── 面接設定状況（期間フィルター非依存） ─── */}
+    <InterviewSetupPanel candidates={candidates} onSelect={onSelect} />
 
     {/* ─── インサイト ─── */}
     <InsightsPanel stats={s} filtered={filtered} />
@@ -2188,7 +2255,7 @@ function App() {
       {tab === "list" && <ListView candidates={candidates} onSelect={openEdit} onAdd={openNew} onImport={() => setImportOpen(true)} onExport={handleExport} onBulkStatus={handleBulkStatus} onBulkDelete={handleBulkDelete} />}
       {tab === "kanban" && <KanbanView candidates={candidates} onSelect={openEdit} onStatusChange={handleSC} use2nd={use2nd} />}
       {tab === "interview" && <InterviewView candidates={candidates} onSelect={openEdit} use2nd={use2nd} />}
-      {tab === "analytics" && <AnalyticsView candidates={candidates} use2nd={use2nd} setCandidates={setCandidates} bulkSave={bulkSave} />}
+      {tab === "analytics" && <AnalyticsView candidates={candidates} use2nd={use2nd} setCandidates={setCandidates} bulkSave={bulkSave} onSelect={openEdit} />}
       {tab === "agents" && <AgentView candidates={candidates} pw={pw} />}
     </div>
     <Modal open={!!modal} onClose={() => { setModal(null); setEditC(null); }} title={modal?.mode === "new" ? "候補者を追加" : `${editC?.name || ""} を編集`}>
